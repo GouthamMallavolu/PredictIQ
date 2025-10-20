@@ -2,11 +2,15 @@
 Kafka Configuration for StockRecoAI
 Using Azure Event Hubs with Kafka protocol
 """
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Kafka Broker (Event Hubs with Kafka endpoint)
-KAFKA_BROKER = "finsightai-team05-ns.servicebus.windows.net:9093"
-SASL_USERNAME = "$ConnectionString"
-SASL_PASSWORD = "Endpoint=sb://finsightai-team05-ns.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=L4U4Hm6TRih6qVQNmu4LKKBye8IR7YR/S+AEhMpiNPQ="
+KAFKA_BROKER = os.getenv("KAFKA_BROKER")
+SASL_USERNAME = os.getenv("KAFKA_USERNAME")
+SASL_PASSWORD = os.getenv("KAFKA_PASSWORD")
 
 # Topics (team05 = your team name)
 TOPIC_WATCH = "team05.watch"              # Real-time stock price + news stream (from Alpha Vantage)

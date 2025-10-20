@@ -12,19 +12,19 @@ KAFKA_BROKER = os.getenv("KAFKA_BROKER")
 SASL_USERNAME = os.getenv("KAFKA_USERNAME")
 SASL_PASSWORD = os.getenv("KAFKA_PASSWORD")
 
-# Topics (team05 = your team name)
-TOPIC_WATCH = "team05.watch"              # Real-time stock price + news stream (from Alpha Vantage)
-TOPIC_RATE = "team05.rate"                # Price change events (hourly deltas, volatility signals)
-TOPIC_PREDICT_REQUESTS = "team05.predict_requests"   # Prediction requests (which stocks to predict)
-TOPIC_PREDICT_RESPONSES = "team05.predict_responses" # Prediction results (predicted prices)
+# Topics
+TOPIC_WATCH = os.getenv("TOPIC_WATCH")
+TOPIC_RATE = os.getenv("TOPIC_RATE")
+TOPIC_PREDICT_REQUESTS = os.getenv("TOPIC_PREDICT_REQUESTS")
+TOPIC_PREDICT_RESPONSES = os.getenv("TOPIC_PREDICT_RESPONSES")
 
 # Stock symbols
-SYMBOLS = ["AAPL", "MSFT", "AMZN", "NVDA", "META", "TSLA", "TSM"]
+SYMBOLS = os.getenv("SYMBOLS")
 
 # Azure Storage for snapshots
-STORAGE_CONNECTION = "DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=finsightaistorage2025;AccountKey=qzHme6Agnw39GpQcwqX1RJHjI8OYU30ScHmkxSvqAixm3JHxZEs/p9eRCoFoqpvlNguk62NOJNO++AStHUDs5w=="
-STORAGE_CONTAINER = "snapshots"
+STORAGE_CONNECTION = os.getenv("STORAGE_CONNECTION")
+STORAGE_CONTAINER = os.getenv("STORAGE_CONTAINER")
 
 # Consumer group
-CONSUMER_GROUP = "stock-ingestor"
+CONSUMER_GROUP = os.getenv("CONSUMER_GROUP")
 

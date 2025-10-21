@@ -27,15 +27,15 @@ class ModelPredictor:
         """Load all available models"""
         try:
             from tensorflow.keras.models import load_model
-            self.lstm_model = load_model("multi_stock_model_LSTM.keras")
-            self.scaler = joblib.load("scaler.pkl")
+            self.lstm_model = load_model("trained_lstm_model.keras")
+            self.scaler = joblib.load("trained_lstm_scaler.pkl")
             self.lstm_loaded = True
             logger.info("✅ LSTM model loaded")
         except Exception as e:
             logger.warning(f"⚠️ Could not load LSTM: {e}")
         
         try:
-            self.rf_model = joblib.load("random_forest_model.pkl")
+            self.rf_model = joblib.load("trained_random_forest.pkl")
             self.rf_loaded = True
             logger.info("✅ Random Forest model loaded")
         except Exception as e:

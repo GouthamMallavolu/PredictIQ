@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 
@@ -7,9 +7,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy model files
-COPY multi_stock_model_LSTM.keras .
-COPY scaler.pkl .
-COPY random_forest_model.pkl .
+COPY trained_lstm_model.keras .
+COPY trained_lstm_scaler.pkl .
+COPY trained_random_forest.pkl .
 
 # Copy application code
 COPY api/ ./api/

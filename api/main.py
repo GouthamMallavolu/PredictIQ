@@ -1,9 +1,3 @@
-"""
-StockRecoAI FastAPI Service
-Recommendation API for stock price predictions
-
-This is your Dockerized API for Task 4
-"""
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional

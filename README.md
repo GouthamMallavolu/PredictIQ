@@ -1,7 +1,3 @@
-# StockRecoAI - Stock Recommendation System
-
-**Submission Tomorrow** | Course Project | Team: team01
-
 ## 📁 Project Structure (CLEAN)
 
 ```

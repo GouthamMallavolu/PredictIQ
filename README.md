@@ -61,17 +61,6 @@ Follow `SUBMISSION_README.md` step by step.
 - **PROJECT_ADAPTATION_PLAN.md** - How we map to rubric requirements
 - **kafka_pipeline/producer.py** - YOUR data simulation (critical!)
 - **scripts/compare_models.py** - Generates comparison table for PDF
-
-## 🎯 Tomorrow's Checklist
-
-Morning:
-- [ ] Deploy Docker to Azure (1.5 hrs)
-- [ ] Test API & run probing (1 hr)
-- [ ] Generate model comparison (30 mins)
-
-Afternoon:
-- [ ] Create PDF report (3 hrs)
-- [ ] Final testing (1 hr)
 - [ ] Submit! 🎉
 
 ---

@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
 import logging
@@ -6,9 +8,10 @@ import time
 from datetime import datetime
 import json
 import numpy as np
+import os
 
 # Import predictor logic
-from .predictor import ModelPredictor
+from predictor import ModelPredictor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,6 +22,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Mount static files for React frontend
+if os.path.exists("frontend/build"):
+    app.mount("/static", StaticFiles(directory="frontend/build/static"), name="static")
+
 # Initialize model predictor (loads all 3 models)
 predictor = ModelPredictor()
 
@@ -27,7 +34,6 @@ class RecommendRequest(BaseModel):
     """Recommendation request schema"""
     user_id: str
     symbols: List[str] = Field(default=["AAPL", "MSFT", "NVDA", "META", "TSLA"], min_length=1)
-    top_k: int = Field(default=5, ge=1, le=10)
     model: str = Field(default="lstm", pattern="^(lstm|rf|ma|ensemble)$")
 
 class StockPrediction(BaseModel):
@@ -51,13 +57,16 @@ class PredictionResponse(BaseModel):
 
 @app.get("/")
 async def root():
-    """Health check endpoint"""
-    return {
-        "service": "StockRecoAI",
-        "status": "healthy",
-        "version": "1.0.0",
-        "models_loaded": predictor.models_loaded
-    }
+    """Serve React frontend or health check"""
+    if os.path.exists("frontend/build/index.html"):
+        return FileResponse("frontend/build/index.html")
+    else:
+        return {
+            "service": "StockRecoAI",
+            "status": "healthy",
+            "version": "1.0.0",
+            "models_loaded": predictor.models_loaded
+        }
 
 @app.get("/health")
 async def health():
@@ -93,9 +102,9 @@ async def recommend(request: RecommendRequest):
             model_name=request.model
         )
         
-        # Create stock predictions
+        # Create stock predictions (return for all requested symbols)
         stock_predictions = []
-        for symbol, pred in list(predictions.items())[:request.top_k]:
+        for symbol, pred in predictions.items():
             current = pred.get('current_price', 0.0)
             predicted = pred['predicted_price']
             change = predicted - current
@@ -132,29 +141,111 @@ async def recommend(request: RecommendRequest):
 
 @app.get("/models")
 async def list_models():
-    """List available models and their info"""
-    return {
-        "models": [
-            {
+    """List available models and their detailed metrics"""
+    import joblib
+    import os
+    
+    models = []
+    
+    # LSTM Model
+    if predictor.lstm_loaded:
+        try:
+            lstm_metrics = joblib.load("lstm_training_metrics.pkl")
+            model_size = os.path.getsize("multi_stock_model_LSTM.keras") / (1024 * 1024)
+            models.append({
                 "name": "lstm",
                 "description": "LSTM Neural Network",
-                "loaded": predictor.lstm_loaded,
-                "accuracy": "MAE: 2.69"
-            },
-            {
+                "loaded": True,
+                "train_mae": round(lstm_metrics['train_mae'], 2),
+                "test_mae": round(lstm_metrics['test_mae'], 2),
+                "training_time_min": round(lstm_metrics['training_time_min'], 1),
+                "model_size_mb": round(model_size, 1)
+            })
+        except:
+            models.append({
+                "name": "lstm",
+                "description": "LSTM Neural Network",
+                "loaded": True,
+                "train_mae": "N/A",
+                "test_mae": "N/A",
+                "training_time_min": "N/A",
+                "model_size_mb": "N/A"
+            })
+    
+    # Random Forest Model
+    if predictor.rf_loaded:
+        try:
+            rf_metrics = joblib.load("rf_training_metrics.pkl")
+            model_size = os.path.getsize("random_forest_model.pkl") / (1024 * 1024)
+            models.append({
+                "name": "rf", 
+                "description": "Random Forest Regressor",
+                "loaded": True,
+                "train_mae": round(rf_metrics['train_mae'], 2),
+                "test_mae": round(rf_metrics['test_mae'], 2),
+                "training_time_min": round(rf_metrics['training_time_min'], 1),
+                "model_size_mb": round(model_size, 1)
+            })
+        except:
+            models.append({
+                "name": "rf", 
+                "description": "Random Forest Regressor",
+                "loaded": True,
+                "train_mae": "N/A",
+                "test_mae": "N/A",
+                "training_time_min": "N/A",
+                "model_size_mb": "N/A"
+            })
+    
+    # Moving Average Model
+    if predictor.ma_loaded:
+        try:
+            ma_metrics = joblib.load("ma_training_metrics.pkl")
+            models.append({
                 "name": "ma",
-                "description": "Moving Average Baseline",
-                "loaded": predictor.ma_loaded,
-                "accuracy": "MAE: 8.45"
-            },
-            {
-                "name": "ensemble",
-                "description": "Weighted ensemble of LSTM and Moving Average",
-                "loaded": all([predictor.lstm_loaded, predictor.ma_loaded]),
-                "accuracy": "MAE: 2.50 (estimated)"
-            }
-        ]
-    }
+                "description": "Moving Average Baseline", 
+                "loaded": True,
+                "train_mae": round(ma_metrics['sample_mae'], 2),
+                "test_mae": round(ma_metrics['sample_mae'], 2),
+                "training_time_min": round(ma_metrics['training_time_min'], 1),
+                "model_size_mb": 0.001
+            })
+        except:
+            models.append({
+                "name": "ma",
+                "description": "Moving Average Baseline", 
+                "loaded": True,
+                "train_mae": "N/A",
+                "test_mae": "N/A",
+                "training_time_min": "N/A",
+                "model_size_mb": 0.001
+            })
+    
+    # Ensemble (only if multiple models are loaded)
+    if sum([predictor.lstm_loaded, predictor.rf_loaded, predictor.ma_loaded]) >= 2:
+        models.append({
+            "name": "ensemble",
+            "description": "Weighted ensemble of all models",
+            "loaded": True,
+            "train_mae": "Combined",
+            "test_mae": "Combined",
+            "training_time_min": "Sum of all",
+            "model_size_mb": "Sum of all"
+        })
+    
+    # If no models loaded, show demo mode
+    if not models:
+        models.append({
+            "name": "demo",
+            "description": "Demo Model (Mock Predictions)",
+            "loaded": True,
+            "train_mae": "Demo",
+            "test_mae": "Demo",
+            "training_time_min": "Demo",
+            "model_size_mb": "Demo"
+        })
+    
+    return {"models": models}
 
 if __name__ == "__main__":
     import uvicorn

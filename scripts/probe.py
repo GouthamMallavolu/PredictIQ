@@ -36,7 +36,6 @@ def probe_api():
     request_payload = {
         "user_id": f"probe_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         "symbols": ["AAPL", "MSFT", "NVDA"],
-        "top_k": 5,
         "model": "lstm"
     }
     

@@ -30,16 +30,18 @@ venv.bak/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*.ipynb
 
-# Model files
+# Model files (large binary files - store in Azure Blob or Git LFS)
 *.pkl
 *.keras
 *.h5
 *.joblib
 
-# IDE
+# IDE & Cursor
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 
@@ -63,3 +65,19 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Memory Bank & Documentation (development only)
+memory-bank/
+optimization-journey/
+docs/epics/
+EPICS.md
+CONSUMER_UPDATE_SUMMARY.md
+PRD_Azure_FinSightAI.md
+
+# Data files (store in Azure Blob)
+*.csv
+model_comparison.csv
+Merged_dataset.csv
+
+# Test files (keep only if needed)
+test_consumer.py

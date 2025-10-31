@@ -1,0 +1,46 @@
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [ main, development ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Build and push Docker image
+      run: |
+        # Build image
+        docker build -t finsightai:${{ github.sha }} .
+        
+        # Tag for ACR
+        docker tag finsightai:${{ github.sha }} finsightacr.azurecr.io/finsightai:${{ github.sha }}
+        
+        # Push to ACR
+        docker push finsightacr.azurecr.io/finsightai:${{ github.sha }}
+    
+    - name: Deploy to Azure Container Instances
+      run: |
+        az container create \
+          --resource-group FinSightAI-RG \
+          --name finsightai-api \
+          --image finsightacr.azurecr.io/finsightai:${{ github.sha }} \
+          --dns-name-label finsightai-team05 \
+          --ports 8000 \
+          --cpu 2 \
+          --memory 4 \
+          --environment-variables \
+            KAFKA_BROKER="${{ secrets.KAFKA_BROKER }}" \
+            STORAGE_CONNECTION="${{ secrets.STORAGE_CONNECTION }}" \
+            STORAGE_CONTAINER="snapshots"
+

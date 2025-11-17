@@ -19,14 +19,29 @@ API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 def create_kafka_producer():
     """Create Kafka producer for reco topics"""
-    return KafkaProducer(
-        bootstrap_servers=[KAFKA_BROKER],
-        security_protocol='SASL_SSL',
-        sasl_mechanism='PLAIN',
-        sasl_plain_username=SASL_USERNAME,
-        sasl_plain_password=SASL_PASSWORD,
-        value_serializer=lambda v: json.dumps(v).encode('utf-8')
-    )
+    print(f"[INFO] Connecting to Kafka broker: {KAFKA_BROKER}")
+    print(f"[INFO] Using username: {SASL_USERNAME}")
+    print(f"[INFO] Password configured: {'Yes' if SASL_PASSWORD else 'No'}")
+    
+    try:
+        producer = KafkaProducer(
+            bootstrap_servers=[KAFKA_BROKER],
+            security_protocol='SASL_SSL',
+            sasl_mechanism='PLAIN',
+            sasl_plain_username=SASL_USERNAME,
+            sasl_plain_password=SASL_PASSWORD,
+            value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+            api_version=(0, 10, 1),
+            request_timeout_ms=30000,  # 30 seconds
+            connections_max_idle_ms=60000,  # 60 seconds
+            max_block_ms=30000  # 30 seconds
+        )
+        print("[OK] Kafka producer created successfully")
+        return producer
+    except Exception as e:
+        print(f"[ERROR] Failed to create Kafka producer: {e}")
+        print(f"[ERROR] Error type: {type(e).__name__}")
+        raise
 
 def probe_api():
     """Send probe request to API and log to Kafka"""

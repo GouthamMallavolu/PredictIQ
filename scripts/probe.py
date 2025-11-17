@@ -55,21 +55,11 @@ def probe_api():
     }
     
     print(f"Sending probe request: {request_payload['user_id']}")
-
-    kafka_available = False
+    
     try:
-        # Log request to Kafka (if available)
-        if producer:
-            try:
-                producer.send(TOPIC_RECO_REQUESTS, request_payload)
-                producer.flush(timeout=5)  # Wait for send to complete
-                kafka_available = True
-                print("[OK] Request logged to Kafka")
-            except Exception as kafka_error:
-                print(f"[WARN] Failed to send to Kafka: {kafka_error}")
-                print("[WARN] Continuing without Kafka logging...")
-                kafka_available = False
-
+        # Log request to Kafka
+        producer.send(TOPIC_RECO_REQUESTS, request_payload)
+        
         # Call API
         start_time = datetime.now()
         response = requests.post(
@@ -77,12 +67,12 @@ def probe_api():
             json=request_payload,
             timeout=10
         )
-        latency_ms = (datetime.now() - start_time).total_seconds() * 1000       
-
+        latency_ms = (datetime.now() - start_time).total_seconds() * 1000
+        
         if response.status_code == 200:
             result = response.json()
-
-            # Log response to Kafka (if available)
+            
+            # Log response to Kafka
             response_payload = {
                 "request_id": request_payload["user_id"],
                 "response": result,
@@ -91,14 +81,8 @@ def probe_api():
                 "num_predictions": len(result.get("results", {})),
                 "status": "success"
             }
-
-            if producer and kafka_available:
-                try:
-                    producer.send(TOPIC_RECO_RESPONSES, response_payload)
-                    producer.flush(timeout=5)
-                    print("[OK] Response logged to Kafka")
-                except Exception as kafka_error:
-                    print(f"[WARN] Failed to log response to Kafka: {kafka_error}")
+            
+            producer.send(TOPIC_RECO_RESPONSES, response_payload)
             
             print(f"Probe successful:")
             print(f"   Latency: {latency_ms:.2f}ms")
@@ -130,14 +114,9 @@ def probe_api():
                 "timestamp": datetime.now().isoformat(),
                 "status": "error"
             }
-            if producer and kafka_available:
-                try:
-                    producer.send(TOPIC_RECO_RESPONSES, error_payload)
-                    producer.flush(timeout=5)
-                except Exception as kafka_error:
-                    print(f"[WARN] Failed to log error to Kafka: {kafka_error}")
+            producer.send(TOPIC_RECO_RESPONSES, error_payload)
             return error_payload
-
+            
     except Exception as e:
         print(f"Probe failed: {e}")
         error_payload = {
@@ -146,20 +125,11 @@ def probe_api():
             "timestamp": datetime.now().isoformat(),
             "status": "error"
         }
-        if producer and kafka_available:
-            try:
-                producer.send(TOPIC_RECO_RESPONSES, error_payload)
-                producer.flush(timeout=5)
-            except Exception as kafka_error:
-                print(f"[WARN] Failed to log error to Kafka: {kafka_error}")
+        producer.send(TOPIC_RECO_RESPONSES, error_payload)
         return error_payload
     finally:
-        if producer:
-            try:
-                producer.flush(timeout=2)
-                producer.close(timeout=2)
-            except:
-                pass  # Ignore errors during cleanup
+        producer.flush()
+        producer.close()
 
 if __name__ == "__main__":
     probe_api()

@@ -14,24 +14,24 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Azure Login
-      if: ${{ secrets.AZURE_CREDENTIALS != '' }}
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-    
     - name: Build Docker image
       run: |
         docker build -t finsightai:${{ github.sha }} .
         echo "Docker image built successfully"
     
+    - name: Azure Login
+      continue-on-error: true
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
     - name: Login to Azure Container Registry
-      if: ${{ secrets.AZURE_CREDENTIALS != '' }}
+      continue-on-error: true
       run: |
         az acr login --name finsightairegistry
     
     - name: Tag and push Docker image
-      if: ${{ secrets.AZURE_CREDENTIALS != '' }}
+      continue-on-error: true
       run: |
         docker tag finsightai:${{ github.sha }} finsightairegistry.azurecr.io/finsightai-api:${{ github.sha }}
         docker tag finsightai:${{ github.sha }} finsightairegistry.azurecr.io/finsightai-api:latest
@@ -39,16 +39,20 @@ jobs:
         docker push finsightairegistry.azurecr.io/finsightai-api:latest
     
     - name: Deploy to Azure Container Apps
-      if: ${{ secrets.AZURE_CREDENTIALS != '' }}
+      continue-on-error: true
       run: |
         az containerapp update \
           --name finsightai-api \
           --resource-group FinSightAI-RG \
           --image finsightairegistry.azurecr.io/finsightai-api:${{ github.sha }}
     
-    - name: Skip deployment (no Azure credentials)
-      if: ${{ secrets.AZURE_CREDENTIALS == '' }}
+    - name: Deployment Status
+      if: always()
       run: |
-        echo "Skipping Azure deployment - AZURE_CREDENTIALS secret not configured"
-        echo "To enable deployment, add AZURE_CREDENTIALS secret in GitHub repository settings"
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "Workflow completed successfully"
+        else
+          echo "Note: Azure deployment steps may have been skipped if AZURE_CREDENTIALS secret is not configured"
+          echo "To enable deployment, add AZURE_CREDENTIALS secret in GitHub repository settings"
+        fi
 

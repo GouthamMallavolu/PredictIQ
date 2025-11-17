@@ -81,3 +81,5 @@ Merged_dataset.csv
 
 # Test files (keep only if needed)
 test_consumer.py
+# Azure credentials (sensitive)
+azure_credentials.json

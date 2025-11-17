@@ -17,11 +17,12 @@ on:
   
   # Allow manual triggering
   workflow_dispatch:
-  
-  # Optional: Run on push to main branch (for testing)
-  # push:
-  #   branches:
-  #     - main
+
+  # Run on push to development/main for testing and visibility
+  push:
+    branches:
+      - development
+      - main
 
 jobs:
   probe-api:

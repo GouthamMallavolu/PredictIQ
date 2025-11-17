@@ -55,11 +55,21 @@ def probe_api():
     }
     
     print(f"Sending probe request: {request_payload['user_id']}")
-    
+
+    kafka_available = False
     try:
-        # Log request to Kafka
-        producer.send(TOPIC_RECO_REQUESTS, request_payload)
-        
+        # Log request to Kafka (if available)
+        if producer:
+            try:
+                producer.send(TOPIC_RECO_REQUESTS, request_payload)
+                producer.flush(timeout=5)  # Wait for send to complete
+                kafka_available = True
+                print("[OK] Request logged to Kafka")
+            except Exception as kafka_error:
+                print(f"[WARN] Failed to send to Kafka: {kafka_error}")
+                print("[WARN] Continuing without Kafka logging...")
+                kafka_available = False
+
         # Call API
         start_time = datetime.now()
         response = requests.post(
@@ -67,12 +77,12 @@ def probe_api():
             json=request_payload,
             timeout=10
         )
-        latency_ms = (datetime.now() - start_time).total_seconds() * 1000
-        
+        latency_ms = (datetime.now() - start_time).total_seconds() * 1000       
+
         if response.status_code == 200:
             result = response.json()
-            
-            # Log response to Kafka
+
+            # Log response to Kafka (if available)
             response_payload = {
                 "request_id": request_payload["user_id"],
                 "response": result,
@@ -81,8 +91,14 @@ def probe_api():
                 "num_predictions": len(result.get("results", {})),
                 "status": "success"
             }
-            
-            producer.send(TOPIC_RECO_RESPONSES, response_payload)
+
+            if producer and kafka_available:
+                try:
+                    producer.send(TOPIC_RECO_RESPONSES, response_payload)
+                    producer.flush(timeout=5)
+                    print("[OK] Response logged to Kafka")
+                except Exception as kafka_error:
+                    print(f"[WARN] Failed to log response to Kafka: {kafka_error}")
             
             print(f"Probe successful:")
             print(f"   Latency: {latency_ms:.2f}ms")

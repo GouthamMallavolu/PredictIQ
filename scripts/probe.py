@@ -114,9 +114,14 @@ def probe_api():
                 "timestamp": datetime.now().isoformat(),
                 "status": "error"
             }
-            producer.send(TOPIC_RECO_RESPONSES, error_payload)
+            if producer and kafka_available:
+                try:
+                    producer.send(TOPIC_RECO_RESPONSES, error_payload)
+                    producer.flush(timeout=5)
+                except Exception as kafka_error:
+                    print(f"[WARN] Failed to log error to Kafka: {kafka_error}")
             return error_payload
-            
+
     except Exception as e:
         print(f"Probe failed: {e}")
         error_payload = {
@@ -125,11 +130,20 @@ def probe_api():
             "timestamp": datetime.now().isoformat(),
             "status": "error"
         }
-        producer.send(TOPIC_RECO_RESPONSES, error_payload)
+        if producer and kafka_available:
+            try:
+                producer.send(TOPIC_RECO_RESPONSES, error_payload)
+                producer.flush(timeout=5)
+            except Exception as kafka_error:
+                print(f"[WARN] Failed to log error to Kafka: {kafka_error}")
         return error_payload
     finally:
-        producer.flush()
-        producer.close()
+        if producer:
+            try:
+                producer.flush(timeout=2)
+                producer.close(timeout=2)
+            except:
+                pass  # Ignore errors during cleanup
 
 if __name__ == "__main__":
     probe_api()

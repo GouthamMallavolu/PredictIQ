@@ -18,10 +18,9 @@ COPY scripts/ ./scripts/
 COPY kafka_pipeline/config.py ./kafka_pipeline/
 COPY kafka_pipeline/schemas.py ./kafka_pipeline/
 
-# Copy model files last (large files, change less frequently)
-COPY multi_stock_model_LSTM.keras ./
-COPY scaler.pkl ./
-COPY random_forest_model.pkl ./
+# Model files are NOT copied here - they are loaded from Azure Blob Storage at runtime
+# This keeps the Docker image small and allows model updates without rebuilding
+# Models are loaded by api/predictor.py from blob storage
 
 # Copy React frontend build (if exists)
 # COPY frontend/build/ ./frontend/build/

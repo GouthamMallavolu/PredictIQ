@@ -45,7 +45,7 @@ jobs:
       continue-on-error: true
       id: check_app
       run: |
-        if az account show &>/dev/null && az containerapp show --name finsightai-api --resource-group FinSightAI-RG &>/dev/null 2>&1; then
+        if az account show &>/dev/null && az containerapp show --name finsightai-api --resource-group finsightai-resourcegroup &>/dev/null 2>&1; then
           echo "exists=true" >> $GITHUB_OUTPUT
         else
           echo "exists=false" >> $GITHUB_OUTPUT
@@ -57,7 +57,7 @@ jobs:
       run: |
         az containerapp update \
           --name finsightai-api \
-          --resource-group FinSightAI-RG \
+          --resource-group finsightai-resourcegroup \
           --image finsightairegistry.azurecr.io/finsightai-api:${{ github.sha }}
     
     - name: Create Container App (if doesn't exist)
@@ -66,7 +66,7 @@ jobs:
       run: |
         echo "Container App 'finsightai-api' does not exist"
         echo "To create it, run:"
-        echo "az containerapp create --name finsightai-api --resource-group FinSightAI-RG ..."
+        echo "az containerapp create --name finsightai-api --resource-group finsightai-resourcegroup ..."
         echo "Or create it manually in Azure Portal"
     
     - name: Deployment Status

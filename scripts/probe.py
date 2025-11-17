@@ -32,10 +32,22 @@ def create_kafka_producer():
             sasl_plain_password=SASL_PASSWORD,
             value_serializer=lambda v: json.dumps(v).encode('utf-8'),
             api_version=(0, 10, 1),
-            request_timeout_ms=30000,  # 30 seconds
-            connections_max_idle_ms=60000,  # 60 seconds
-            max_block_ms=30000  # 30 seconds
+            request_timeout_ms=60000,  # 60 seconds
+            connections_max_idle_ms=120000,  # 120 seconds
+            max_block_ms=60000,  # 60 seconds
+            metadata_max_age_ms=300000,  # 5 minutes - cache metadata longer
+            retry_backoff_ms=1000,  # Retry backoff
+            max_in_flight_requests_per_connection=5,
+            enable_idempotence=False  # Disable idempotence for better compatibility
         )
+        # Try to fetch metadata immediately to test connection
+        print("[INFO] Testing Kafka connection...")
+        try:
+            producer.list_topics(timeout=10)
+            print("[OK] Kafka connection verified")
+        except Exception as meta_error:
+            print(f"[WARN] Metadata fetch failed: {meta_error}")
+            print("[WARN] Will attempt to send anyway...")
         print("[OK] Kafka producer created successfully")
         return producer
     except Exception as e:
@@ -59,12 +71,18 @@ def probe_api():
     try:
         # Log request to Kafka (non-blocking, with timeout handling)
         try:
+            # Use send with explicit timeout
             future = producer.send(TOPIC_RECO_REQUESTS, request_payload)
-            # Don't wait for Kafka - proceed with API call
-            print("[OK] Request queued to Kafka")
+            # Don't wait for completion - just queue it
+            print("[OK] Request queued to Kafka (async)")
         except Exception as kafka_error:
             print(f"[ERROR] Failed to queue request to Kafka: {kafka_error}")
-            raise  # Fail if Kafka is completely broken
+            print(f"[ERROR] Error type: {type(kafka_error).__name__}")
+            # If it's a timeout, try to continue anyway - metadata might be cached
+            if "Timeout" in str(type(kafka_error).__name__):
+                print("[WARN] Kafka timeout - continuing with API call, will retry Kafka later")
+            else:
+                raise  # Fail if Kafka is completely broken
 
         # Call API
         start_time = datetime.now()

@@ -5,42 +5,50 @@ on:
     branches: [ main, development ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:  # Allow manual triggering
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Azure Login
+      if: ${{ secrets.AZURE_CREDENTIALS != '' }}
       uses: azure/login@v1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
     
-    - name: Build and push Docker image
+    - name: Build Docker image
       run: |
-        # Build image
         docker build -t finsightai:${{ github.sha }} .
-        
-        # Tag for ACR
-        docker tag finsightai:${{ github.sha }} finsightacr.azurecr.io/finsightai:${{ github.sha }}
-        
-        # Push to ACR
-        docker push finsightacr.azurecr.io/finsightai:${{ github.sha }}
+        echo "Docker image built successfully"
     
-    - name: Deploy to Azure Container Instances
+    - name: Login to Azure Container Registry
+      if: ${{ secrets.AZURE_CREDENTIALS != '' }}
       run: |
-        az container create \
-          --resource-group FinSightAI-RG \
+        az acr login --name finsightairegistry
+    
+    - name: Tag and push Docker image
+      if: ${{ secrets.AZURE_CREDENTIALS != '' }}
+      run: |
+        docker tag finsightai:${{ github.sha }} finsightairegistry.azurecr.io/finsightai-api:${{ github.sha }}
+        docker tag finsightai:${{ github.sha }} finsightairegistry.azurecr.io/finsightai-api:latest
+        docker push finsightairegistry.azurecr.io/finsightai-api:${{ github.sha }}
+        docker push finsightairegistry.azurecr.io/finsightai-api:latest
+    
+    - name: Deploy to Azure Container Apps
+      if: ${{ secrets.AZURE_CREDENTIALS != '' }}
+      run: |
+        az containerapp update \
           --name finsightai-api \
-          --image finsightacr.azurecr.io/finsightai:${{ github.sha }} \
-          --dns-name-label finsightai-team05 \
-          --ports 8000 \
-          --cpu 2 \
-          --memory 4 \
-          --environment-variables \
-            KAFKA_BROKER="${{ secrets.KAFKA_BROKER }}" \
-            STORAGE_CONNECTION="${{ secrets.STORAGE_CONNECTION }}" \
-            STORAGE_CONTAINER="snapshots"
+          --resource-group FinSightAI-RG \
+          --image finsightairegistry.azurecr.io/finsightai-api:${{ github.sha }}
+    
+    - name: Skip deployment (no Azure credentials)
+      if: ${{ secrets.AZURE_CREDENTIALS == '' }}
+      run: |
+        echo "Skipping Azure deployment - AZURE_CREDENTIALS secret not configured"
+        echo "To enable deployment, add AZURE_CREDENTIALS secret in GitHub repository settings"
 

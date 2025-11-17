@@ -57,9 +57,15 @@ def probe_api():
     print(f"Sending probe request: {request_payload['user_id']}")
     
     try:
-        # Log request to Kafka
-        producer.send(TOPIC_RECO_REQUESTS, request_payload)
-        
+        # Log request to Kafka (non-blocking, with timeout handling)
+        try:
+            future = producer.send(TOPIC_RECO_REQUESTS, request_payload)
+            # Don't wait for Kafka - proceed with API call
+            print("[OK] Request queued to Kafka")
+        except Exception as kafka_error:
+            print(f"[ERROR] Failed to queue request to Kafka: {kafka_error}")
+            raise  # Fail if Kafka is completely broken
+
         # Call API
         start_time = datetime.now()
         response = requests.post(
@@ -82,7 +88,12 @@ def probe_api():
                 "status": "success"
             }
             
-            producer.send(TOPIC_RECO_RESPONSES, response_payload)
+            try:
+                producer.send(TOPIC_RECO_RESPONSES, response_payload)
+                print("[OK] Response queued to Kafka")
+            except Exception as kafka_error:
+                print(f"[ERROR] Failed to queue response to Kafka: {kafka_error}")
+                raise  # Fail if Kafka is broken
             
             print(f"Probe successful:")
             print(f"   Latency: {latency_ms:.2f}ms")
@@ -114,9 +125,12 @@ def probe_api():
                 "timestamp": datetime.now().isoformat(),
                 "status": "error"
             }
-            producer.send(TOPIC_RECO_RESPONSES, error_payload)
+            try:
+                producer.send(TOPIC_RECO_RESPONSES, error_payload)
+            except Exception as kafka_error:
+                print(f"[ERROR] Failed to queue error to Kafka: {kafka_error}")
             return error_payload
-            
+
     except Exception as e:
         print(f"Probe failed: {e}")
         error_payload = {
@@ -125,11 +139,20 @@ def probe_api():
             "timestamp": datetime.now().isoformat(),
             "status": "error"
         }
-        producer.send(TOPIC_RECO_RESPONSES, error_payload)
+        try:
+            producer.send(TOPIC_RECO_RESPONSES, error_payload)
+        except Exception as kafka_error:
+            print(f"[ERROR] Failed to queue error to Kafka: {kafka_error}")
         return error_payload
     finally:
-        producer.flush()
-        producer.close()
+        try:
+            producer.flush(timeout=10)  # Flush with timeout
+        except Exception as e:
+            print(f"[WARN] Failed to flush Kafka producer: {e}")
+        try:
+            producer.close(timeout=5)  # Close with timeout
+        except Exception as e:
+            print(f"[WARN] Failed to close Kafka producer: {e}")
 
 if __name__ == "__main__":
     probe_api()

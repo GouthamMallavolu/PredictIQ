@@ -45,7 +45,7 @@ jobs:
       continue-on-error: true
       id: check_app
       run: |
-        if az containerapp show --name finsightai-api --resource-group FinSightAI-RG &>/dev/null; then
+        if az account show &>/dev/null && az containerapp show --name finsightai-api --resource-group FinSightAI-RG &>/dev/null 2>&1; then
           echo "exists=true" >> $GITHUB_OUTPUT
         else
           echo "exists=false" >> $GITHUB_OUTPUT

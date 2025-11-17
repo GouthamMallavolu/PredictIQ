@@ -40,14 +40,25 @@ def create_kafka_producer():
             max_in_flight_requests_per_connection=5,
             enable_idempotence=False  # Disable idempotence for better compatibility
         )
-        # Try to fetch metadata immediately to test connection
-        print("[INFO] Testing Kafka connection...")
+        # Pre-fetch metadata for topics to avoid blocking during send
+        print("[INFO] Pre-fetching Kafka topic metadata...")
         try:
-            producer.list_topics(timeout=10)
-            print("[OK] Kafka connection verified")
+            # Get metadata with longer timeout
+            metadata = producer.list_topics(timeout=20)
+            print(f"[OK] Found {len(metadata)} topics")
+            # Check if our topics exist
+            topics = [topic for topic in metadata]
+            if TOPIC_RECO_REQUESTS in topics:
+                print(f"[OK] Topic {TOPIC_RECO_REQUESTS} exists")
+            else:
+                print(f"[WARN] Topic {TOPIC_RECO_REQUESTS} not found - may need to be created")
+            if TOPIC_RECO_RESPONSES in topics:
+                print(f"[OK] Topic {TOPIC_RECO_RESPONSES} exists")
+            else:
+                print(f"[WARN] Topic {TOPIC_RECO_RESPONSES} not found - may need to be created")
         except Exception as meta_error:
-            print(f"[WARN] Metadata fetch failed: {meta_error}")
-            print("[WARN] Will attempt to send anyway...")
+            print(f"[WARN] Metadata pre-fetch failed: {meta_error}")
+            print("[WARN] Will attempt to send anyway - topics may be auto-created")
         print("[OK] Kafka producer created successfully")
         return producer
     except Exception as e:

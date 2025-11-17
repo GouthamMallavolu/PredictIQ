@@ -101,12 +101,12 @@ def probe_api_for_datetime(target_datetime, producer):
             else:
                 raise  # Fail if Kafka is completely broken
 
-        # Call API
+        # Call API (reduced timeout for faster processing)
         start_time = datetime.now()
         response = requests.post(
             f"{API_URL}/recommend",
             json=request_payload,
-            timeout=10
+            timeout=5  # Reduced from 10 to 5 seconds
         )
         latency_ms = (datetime.now() - start_time).total_seconds() * 1000
         
@@ -189,19 +189,17 @@ def get_market_hours_utc(date):
     For Nov 2024, EST is UTC-5, so:
     - 9:30 AM ET = 14:30 UTC
     - 4:00 PM ET = 21:00 UTC
-    Probes every hour during market hours
+    Reduced to 2 probes per day (market open and close) for faster processing
     """
-    # Start: 9:30 AM ET = 14:30 UTC
-    # End: 4:00 PM ET = 21:00 UTC
-    # Probes every hour: 14:30, 15:30, 16:30, 17:30, 18:30, 19:30, 20:30 UTC
+    # Start: 9:30 AM ET = 14:30 UTC (market open)
+    # End: 4:00 PM ET = 21:00 UTC (market close)
+    # Only 2 probes: market open and market close
     
-    base_date = date.replace(hour=14, minute=30, second=0, microsecond=0)
     hours = []
-
-    # Generate hourly probes from 14:30 to 20:30 UTC (7 probes)
-    for hour_offset in range(7):
-        probe_time = base_date + timedelta(hours=hour_offset)
-        hours.append(probe_time)
+    # Market open
+    hours.append(date.replace(hour=14, minute=30, second=0, microsecond=0))
+    # Market close
+    hours.append(date.replace(hour=21, minute=0, second=0, microsecond=0))
     
     return hours
 
@@ -243,8 +241,8 @@ def probe_nov1_7():
                     total_probes += 1
                     print(f"  [ERROR] Probe failed: {e}")
 
-                # Small delay between probes
-                time.sleep(0.5)
+                # Small delay between probes (reduced for faster processing)
+                time.sleep(0.1)
         else:
             print(f"\n{current_date.strftime('%A, %B %d, %Y')} (Non-Trading Day - Skipped)")
 

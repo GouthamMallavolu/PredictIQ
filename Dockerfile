@@ -22,8 +22,8 @@ COPY kafka_pipeline/schemas.py ./kafka_pipeline/
 # This keeps the Docker image small and allows model updates without rebuilding
 # Models are loaded by api/predictor.py from blob storage
 
-# Copy React frontend build (if exists)
-# COPY frontend/build/ ./frontend/build/
+# Frontend build not included (doesn't exist)
+# Models loaded from blob storage at runtime
 
 # Expose port
 EXPOSE 8000

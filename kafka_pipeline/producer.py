@@ -17,6 +17,10 @@ from pydantic import ValidationError
 
 from config import *
 from schemas import StockWatchEvent
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,10 +43,15 @@ class StockDataProducer:
     
     def fetch_stock_data(self, date):
         """Fetch stock prices for given date from Alpha Vantage"""
-        pattern = r'[A-Z0-9]{16}'
-        api_key = rstr.xeger(pattern)
+        api_key = os.getenv('ALPHA_VANTAGE_KEY')
+        
+        if not api_key:
+            logger.error("ALPHA_VANTAGE_KEY not found in environment variables")
+            return pd.DataFrame()
         
         stock_dfs = []
+        rate_limit_hit = False
+        
         for symbol in SYMBOLS:
             try:
                 url = f"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={symbol}&interval=60min&month={date[:7]}&outputsize=full&apikey={api_key}"
@@ -50,6 +59,25 @@ class StockDataProducer:
                 
                 if r.status_code == 200:
                     data = r.json()
+                    
+                    # Check for API errors and rate limits
+                    if "Error Message" in data:
+                        logger.error(f"API Error for {symbol}: {data['Error Message']}")
+                        continue
+                    
+                    if "Note" in data:
+                        logger.warning(f"API Note for {symbol}: {data['Note']}")
+                        if "rate limit" in data['Note'].lower() or "premium" in data['Note'].lower():
+                            rate_limit_hit = True
+                        continue
+                    
+                    if "Information" in data:
+                        info_msg = data['Information']
+                        logger.warning(f"API Information for {symbol}: {info_msg}")
+                        if "rate limit" in info_msg.lower() or "premium" in info_msg.lower():
+                            rate_limit_hit = True
+                        continue
+                    
                     time_series_key = next((k for k in data if "Time Series" in k), None)
                     
                     if time_series_key:
@@ -61,21 +89,33 @@ class StockDataProducer:
                         df = df[df['time'].dt.date == pd.to_datetime(date).date()]
                         stock_dfs.append(df)
                         logger.info(f"✅ Fetched {len(df)} records for {symbol}")
+                    else:
+                        logger.warning(f"No time series data found for {symbol}. Response keys: {list(data.keys())}")
+                    
                     time.sleep(0.5)  # Rate limit
             except Exception as e:
-                logger.error(f"❌ Error fetching {symbol}: {e}")
+                logger.error(f"❌ Error fetching {symbol}: {e}", exc_info=True)
+        
+        if rate_limit_hit:
+            logger.warning("⚠️  Alpha Vantage API rate limit reached. Free tier allows 25 requests/day.")
+            logger.warning("   Consider using existing data in Kafka/blob storage or upgrade to premium API.")
         
         return pd.concat(stock_dfs) if stock_dfs else pd.DataFrame()
     
     def fetch_news_sentiment(self, date):
         """Fetch news sentiment for given date"""
-        pattern = r'[A-Z0-9]{16}'
-        api_key = rstr.xeger(pattern)
+        api_key = os.getenv('ALPHA_VANTAGE_KEY')
+        
+        if not api_key:
+            logger.error("ALPHA_VANTAGE_KEY not found in environment variables")
+            return pd.DataFrame(columns=['symbol', 'time', 'sentiment_mean', 'news_count'])
         
         time_from = date.replace('-', '') + "T0000"
         next_day = (pd.to_datetime(date) + timedelta(days=1)).strftime("%Y%m%d") + "T0000"
         
         news_dfs = []
+        rate_limit_hit = False
+        
         for symbol in SYMBOLS:
             try:
                 url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers={symbol}&time_from={time_from}&time_to={next_day}&limit=1000&apikey={api_key}"
@@ -83,6 +123,25 @@ class StockDataProducer:
                 
                 if r.status_code == 200:
                     data = r.json()
+                    
+                    # Check for API errors and rate limits
+                    if "Error Message" in data:
+                        logger.error(f"API Error for news {symbol}: {data['Error Message']}")
+                        continue
+                    
+                    if "Note" in data:
+                        logger.warning(f"API Note for news {symbol}: {data['Note']}")
+                        if "rate limit" in data['Note'].lower() or "premium" in data['Note'].lower():
+                            rate_limit_hit = True
+                        continue
+                    
+                    if "Information" in data:
+                        info_msg = data['Information']
+                        logger.warning(f"API Information for news {symbol}: {info_msg}")
+                        if "rate limit" in info_msg.lower() or "premium" in info_msg.lower():
+                            rate_limit_hit = True
+                        continue
+                    
                     if "feed" in data and data["feed"]:
                         df = pd.DataFrame(data["feed"])
                         df["symbol"] = symbol
@@ -92,9 +151,16 @@ class StockDataProducer:
                             lambda x: float(x[0]["ticker_sentiment_score"]) if isinstance(x, list) and len(x) > 0 else 0
                         )
                         news_dfs.append(df[["time", "symbol", "avg_sentiment", "title"]])
+                        logger.info(f"✅ Fetched {len(df)} news articles for {symbol}")
+                    else:
+                        logger.debug(f"No news feed found for {symbol}")
+                    
                     time.sleep(0.5)
             except Exception as e:
-                logger.error(f"❌ Error fetching news for {symbol}: {e}")
+                logger.error(f"❌ Error fetching news for {symbol}: {e}", exc_info=True)
+        
+        if rate_limit_hit:
+            logger.warning("⚠️  Alpha Vantage API rate limit reached for news sentiment.")
         
         if news_dfs:
             news_df = pd.concat(news_dfs)
@@ -127,7 +193,12 @@ class StockDataProducer:
         stock_df = self.fetch_stock_data(date)
         
         if stock_df.empty:
-            logger.error("❌ No stock data fetched. Exiting.")
+            logger.error("❌ No stock data fetched. This may be due to:")
+            logger.error("   1. API rate limit reached (free tier: 25 requests/day)")
+            logger.error("   2. Invalid API key")
+            logger.error("   3. Network issues")
+            logger.error("   4. No data available for the requested date")
+            logger.warning("💡 Tip: Use existing data in Kafka/blob storage or wait for rate limit reset")
             return
         
         logger.info("📰 Fetching news sentiment...")
@@ -165,30 +236,7 @@ class StockDataProducer:
                     self.producer.send(
                         TOPIC_WATCH,
                         key=row['symbol'],
-                        value=watch_event.dict()
-                    )
-                    
-                    # 2. Calculate and send price change event -> team01.rate
-                    # This shows hourly price movements and volatility
-                    price_change = float(row['close']) - float(row['open'])
-                    price_change_pct = (price_change / float(row['open'])) * 100 if float(row['open']) > 0 else 0
-                    volatility = float(row['high']) - float(row['low'])
-                    
-                    rate_event = {
-                        'symbol': row['symbol'],
-                        'timestamp': str(row['time']),
-                        'open': float(row['open']),
-                        'close': float(row['close']),
-                        'price_change': round(price_change, 2),
-                        'price_change_pct': round(price_change_pct, 2),
-                        'volatility': round(volatility, 2),
-                        'volume': int(row['volume']),
-                        'signal': 'bullish' if price_change > 0 else 'bearish'
-                    }
-                    self.producer.send(
-                        TOPIC_RATE,
-                        key=row['symbol'],
-                        value=rate_event
+                        value=watch_event.model_dump()
                     )
                     
                 except ValidationError as e:
@@ -196,7 +244,7 @@ class StockDataProducer:
                 except KafkaError as e:
                     logger.error(f"❌ Kafka send failed: {e}")
             
-            logger.info(f"✅ Sent {len(batch)} events to {TOPIC_WATCH} and {TOPIC_RATE}")
+            logger.info(f"✅ Sent {len(batch)} events to {TOPIC_WATCH}")
             
             # Simulate time passing
             if delay_seconds > 0:

@@ -34,7 +34,7 @@ def batch_probe(count=20, interval_seconds=5):
         count: Number of probes to run
         interval_seconds: Delay between probes
     """
-    print(f"🚀 Running {count} batch probes (interval: {interval_seconds}s)")
+    print(f"Running {count} batch probes (interval: {interval_seconds}s)")
     print("=" * 60)
     
     producer = create_kafka_producer()
@@ -75,13 +75,13 @@ def batch_probe(count=20, interval_seconds=5):
                     "status": "success"
                 }
                 producer.send(TOPIC_RECO_RESPONSES, response_payload)
-                print(f"  ✅ Success (latency: {latency_ms:.2f}ms)")
+                print(f"  [OK] Success (latency: {latency_ms:.2f}ms)")
                 successful += 1
             else:
-                print(f"  ⚠️  Error: {response.status_code}")
+                print(f"  [WARN] Error: {response.status_code}")
         
         except Exception as e:
-            print(f"  ❌ Failed: {e}")
+            print(f"  [ERROR] Failed: {e}")
         
         if i < count - 1:
             time.sleep(interval_seconds)
@@ -90,7 +90,7 @@ def batch_probe(count=20, interval_seconds=5):
     producer.close()
     
     print("\n" + "=" * 60)
-    print(f"✅ Batch Complete: {successful}/{count} successful")
+    print(f"Batch Complete: {successful}/{count} successful")
 
 if __name__ == "__main__":
     import argparse

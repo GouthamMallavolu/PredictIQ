@@ -18,7 +18,7 @@ def verify_probe_records(hours=24):
     Args:
         hours: Number of hours to look back
     """
-    print("🔍 Verifying Probe Records in Kafka")
+    print("Verifying Probe Records in Kafka")
     print("=" * 60)
     
     # Consumer for requests
@@ -50,7 +50,7 @@ def verify_probe_records(hours=24):
     cutoff_time = datetime.now() - timedelta(hours=hours)
     
     # Read requests
-    print(f"\n📥 Reading from {TOPIC_RECO_REQUESTS}...")
+    print(f"\nReading from {TOPIC_RECO_REQUESTS}...")
     requests = []
     for message in requests_consumer:
         record = message.value
@@ -72,7 +72,7 @@ def verify_probe_records(hours=24):
     requests_consumer.close()
     
     # Read responses
-    print(f"📥 Reading from {TOPIC_RECO_RESPONSES}...")
+    print(f"Reading from {TOPIC_RECO_RESPONSES}...")
     responses = []
     for message in responses_consumer:
         record = message.value
@@ -92,17 +92,17 @@ def verify_probe_records(hours=24):
     
     # Analysis
     print("\n" + "=" * 60)
-    print("📊 PROBE RECORDS SUMMARY")
+    print("PROBE RECORDS SUMMARY")
     print("=" * 60)
     
-    print(f"\n📨 Requests ({TOPIC_RECO_REQUESTS}):")
+    print(f"\nRequests ({TOPIC_RECO_REQUESTS}):")
     print(f"   Total records: {len(requests)}")
     if requests:
         print(f"   Sample request IDs:")
         for req in requests[:5]:
             print(f"     - {req.get('user_id', 'N/A')}")
     
-    print(f"\n📬 Responses ({TOPIC_RECO_RESPONSES}):")
+    print(f"\nResponses ({TOPIC_RECO_RESPONSES}):")
     print(f"   Total records: {len(responses)}")
     
     if responses:
@@ -122,7 +122,7 @@ def verify_probe_records(hours=24):
         # Check for simulated records
         simulated = [r for r in responses if r.get('simulated')]
         if simulated:
-            print(f"\n   ⚠️  Simulated records: {len(simulated)}")
+            print(f"\n   [WARN] Simulated records: {len(simulated)}")
         
         print(f"\n   Sample response IDs:")
         for resp in responses[:5]:
@@ -141,7 +141,7 @@ def verify_probe_records(hours=24):
                     pass
         
         if timestamps:
-            print(f"\n📅 Date Range:")
+            print(f"\nDate Range:")
             print(f"   Earliest: {min(timestamps)}")
             print(f"   Latest: {max(timestamps)}")
             print(f"   Span: {(max(timestamps) - min(timestamps)).total_seconds() / 3600:.1f} hours")
@@ -149,10 +149,10 @@ def verify_probe_records(hours=24):
     print("\n" + "=" * 60)
     
     if len(requests) > 0 and len(responses) > 0:
-        print("✅ Probe records verified successfully!")
+        print("[OK] Probe records verified successfully!")
         return True
     else:
-        print("⚠️  No probe records found. Run probe simulation first.")
+        print("[WARN] No probe records found. Run probe simulation first.")
         return False
 
 if __name__ == "__main__":

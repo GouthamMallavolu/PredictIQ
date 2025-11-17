@@ -7,24 +7,23 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Kafka Broker (Event Hubs with Kafka endpoint)
-KAFKA_BROKER = os.getenv("KAFKA_BROKER")
-SASL_USERNAME = os.getenv("KAFKA_USERNAME")
-SASL_PASSWORD = os.getenv("KAFKA_PASSWORD")
+# Kafka Configuration
+KAFKA_BROKER = os.getenv('KAFKA_BROKER', 'finsightai-eventhub.servicebus.windows.net:9093')
+TOPIC_WATCH = os.getenv('TOPIC_WATCH', 'team05.watch')
+TOPIC_NEWS = os.getenv('TOPIC_NEWS', 'team05.news')
+TOPIC_RECO_REQUESTS = os.getenv('TOPIC_RECO_REQUESTS', 'team05.reco_requests')
+TOPIC_RECO_RESPONSES = os.getenv('TOPIC_RECO_RESPONSES', 'team05.reco_responses')
+SASL_USERNAME = os.getenv('KAFKA_USERNAME', '$ConnectionString')
+SASL_PASSWORD = os.getenv('KAFKA_PASSWORD')
+CONSUMER_GROUP = os.getenv('CONSUMER_GROUP', 'finsight-consumer-group')
 
-# Topics
-TOPIC_WATCH = os.getenv("TOPIC_WATCH")
-TOPIC_RATE = os.getenv("TOPIC_RATE")
-TOPIC_PREDICT_REQUESTS = os.getenv("TOPIC_PREDICT_REQUESTS")
-TOPIC_PREDICT_RESPONSES = os.getenv("TOPIC_PREDICT_RESPONSES")
+# Azure Storage Configuration
+AZURE_STORAGE_CONNECTION_STRING = os.getenv('STORAGE_CONNECTION')
+AZURE_STORAGE_CONTAINER_NAME = os.getenv('AZURE_STORAGE_CONTAINER_NAME', 'snapshots')
 
-# Stock symbols
-SYMBOLS = os.getenv("SYMBOLS")
+# Alpha Vantage Configuration
+ALPHA_VANTAGE_KEY = os.getenv('ALPHA_VANTAGE_KEY')
 
-# Azure Storage for snapshots
-STORAGE_CONNECTION = os.getenv("STORAGE_CONNECTION")
-STORAGE_CONTAINER = os.getenv("STORAGE_CONTAINER")
-
-# Consumer group
-CONSUMER_GROUP = os.getenv("CONSUMER_GROUP")
+# Symbols to track
+SYMBOLS = os.getenv('SYMBOLS', 'AAPL,MSFT,NVDA,META,TSLA,AMZN').split(',')
 

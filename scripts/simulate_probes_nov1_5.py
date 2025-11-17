@@ -44,12 +44,12 @@ def simulate_probe_for_datetime(target_datetime, producer):
         "timestamp": target_datetime.isoformat()
     }
     
-    print(f"📊 Simulating probe: {probe_id} at {target_datetime.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print(f"Simulating probe: {probe_id} at {target_datetime.strftime('%Y-%m-%d %H:%M:%S UTC')}")
     
     try:
         # Log request to Kafka
         producer.send(TOPIC_RECO_REQUESTS, request_payload)
-        print(f"  ✅ Request sent to {TOPIC_RECO_REQUESTS}")
+        print(f"  [OK] Request sent to {TOPIC_RECO_REQUESTS}")
         
         # Call API (use current API, but log with historical timestamp)
         start_time = datetime.now()
@@ -80,7 +80,7 @@ def simulate_probe_for_datetime(target_datetime, producer):
                 }
                 
                 producer.send(TOPIC_RECO_RESPONSES, response_payload)
-                print(f"  ✅ Response sent to {TOPIC_RECO_RESPONSES} (latency: {latency_ms:.2f}ms)")
+                print(f"  [OK] Response sent to {TOPIC_RECO_RESPONSES} (latency: {latency_ms:.2f}ms)")
                 return True
             else:
                 error_payload = {
@@ -92,7 +92,7 @@ def simulate_probe_for_datetime(target_datetime, producer):
                     "simulated": True
                 }
                 producer.send(TOPIC_RECO_RESPONSES, error_payload)
-                print(f"  ⚠️  API error: {response.status_code}")
+                print(f"  [WARN] API error: {response.status_code}")
                 return False
                 
         except requests.exceptions.RequestException as e:
@@ -104,11 +104,11 @@ def simulate_probe_for_datetime(target_datetime, producer):
                 "simulated": True
             }
             producer.send(TOPIC_RECO_RESPONSES, error_payload)
-            print(f"  ❌ Request failed: {e}")
+            print(f"  [ERROR] Request failed: {e}")
             return False
             
     except Exception as e:
-        print(f"  ❌ Error: {e}")
+        print(f"  [ERROR] Error: {e}")
         return False
 
 def get_market_hours_utc(date):
@@ -144,7 +144,7 @@ def simulate_nov1_5_probes():
     Only trading days (Nov 1, 4, 5)
     During market hours with 1-hour gaps
     """
-    print("🚀 Starting Probe Simulation for Nov 1-5, 2024")
+    print("Starting Probe Simulation for Nov 1-5, 2024")
     print("=" * 60)
     
     producer = create_kafka_producer()
@@ -159,7 +159,7 @@ def simulate_nov1_5_probes():
     current_date = start_date
     while current_date <= end_date:
         if is_trading_day(current_date):
-            print(f"\n📅 {current_date.strftime('%A, %B %d, %Y')} (Trading Day)")
+            print(f"\n{current_date.strftime('%A, %B %d, %Y')} (Trading Day)")
             market_hours = get_market_hours_utc(current_date)
             
             for probe_time in market_hours:
@@ -171,7 +171,7 @@ def simulate_nov1_5_probes():
                 # Small delay between probes
                 time.sleep(0.5)
         else:
-            print(f"\n📅 {current_date.strftime('%A, %B %d, %Y')} (Non-Trading Day - Skipped)")
+            print(f"\n{current_date.strftime('%A, %B %d, %Y')} (Non-Trading Day - Skipped)")
         
         current_date += timedelta(days=1)
     
@@ -180,14 +180,14 @@ def simulate_nov1_5_probes():
     producer.close()
     
     print("\n" + "=" * 60)
-    print(f"✅ Simulation Complete!")
+    print(f"Simulation Complete!")
     print(f"   Total probes: {total_probes}")
     print(f"   Successful: {successful_probes}")
     print(f"   Failed: {total_probes - successful_probes}")
-    print(f"\n📊 Probe records written to:")
+    print(f"\nProbe records written to:")
     print(f"   - {TOPIC_RECO_REQUESTS}")
     print(f"   - {TOPIC_RECO_RESPONSES}")
-    print(f"\n💡 Note: Timestamps are set to Nov 1-5, 2024 for historical simulation")
+    print(f"\nNote: Timestamps are set to Nov 1-5, 2024 for historical simulation")
 
 if __name__ == "__main__":
     simulate_nov1_5_probes()

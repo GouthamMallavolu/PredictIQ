@@ -43,7 +43,7 @@ def probe_api():
     
     try:
         # Log request to Kafka
-        producer.send(TOPIC_PREDICT_REQUESTS, request_payload)
+        producer.send(TOPIC_RECO_REQUESTS, request_payload)
         
         # Call API
         start_time = datetime.now()
@@ -63,20 +63,31 @@ def probe_api():
                 "response": result,
                 "latency_ms": latency_ms,
                 "timestamp": datetime.now().isoformat(),
-                "num_predictions": len(result.get("predictions", [])),
+                "num_predictions": len(result.get("results", {})),
                 "status": "success"
             }
             
-            producer.send(TOPIC_PREDICT_RESPONSES, response_payload)
+            producer.send(TOPIC_RECO_RESPONSES, response_payload)
             
             print(f"Probe successful:")
             print(f"   Latency: {latency_ms:.2f}ms")
-            print(f"   Predictions: {len(result.get('predictions', []))}")
+            print(f"   Results: {len(result.get('results', {}))}")
             print(f"   Model used: {result.get('model_used')}")
             
             # Show predicted prices
-            for pred in result.get('predictions', [])[:3]:
-                print(f"   {pred['symbol']}: ${pred['current_price']:.2f} -> ${pred['predicted_price']:.2f} ({pred['predicted_change_pct']:+.2f}%)")
+            results = result.get('results', {})
+            for symbol, pred_data in list(results.items())[:3]:
+                if 'error' not in pred_data:
+                    preds = pred_data.get('predictions', {})
+                    current = pred_data.get('current_price', 0)
+                    # Show first available prediction
+                    if preds:
+                        model_name = list(preds.keys())[0]
+                        predicted = preds[model_name]
+                        change_pct = ((predicted - current) / current * 100) if current > 0 else 0
+                        print(f"   {symbol}: ${current:.2f} -> ${predicted:.2f} ({change_pct:+.2f}%) [{model_name}]")
+                else:
+                    print(f"   {symbol}: Error - {pred_data.get('error')}")
             
             return response_payload
         else:
@@ -88,7 +99,7 @@ def probe_api():
                 "timestamp": datetime.now().isoformat(),
                 "status": "error"
             }
-            producer.send(TOPIC_PREDICT_RESPONSES, error_payload)
+            producer.send(TOPIC_RECO_RESPONSES, error_payload)
             return error_payload
             
     except Exception as e:
@@ -99,7 +110,7 @@ def probe_api():
             "timestamp": datetime.now().isoformat(),
             "status": "error"
         }
-        producer.send(TOPIC_PREDICT_RESPONSES, error_payload)
+        producer.send(TOPIC_RECO_RESPONSES, error_payload)
         return error_payload
     finally:
         producer.flush()

@@ -41,13 +41,33 @@ jobs:
         docker push finsightairegistry.azurecr.io/finsightai-api:${{ github.sha }}
         docker push finsightairegistry.azurecr.io/finsightai-api:latest
     
-    - name: Deploy to Azure Container Apps
+    - name: Check if Container App exists
+      continue-on-error: true
+      id: check_app
+      run: |
+        if az containerapp show --name finsightai-api --resource-group FinSightAI-RG &>/dev/null; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Deploy to Azure Container Apps (Update)
+      if: steps.check_app.outputs.exists == 'true'
       continue-on-error: true
       run: |
         az containerapp update \
           --name finsightai-api \
           --resource-group FinSightAI-RG \
           --image finsightairegistry.azurecr.io/finsightai-api:${{ github.sha }}
+    
+    - name: Create Container App (if doesn't exist)
+      if: steps.check_app.outputs.exists == 'false'
+      continue-on-error: true
+      run: |
+        echo "Container App 'finsightai-api' does not exist"
+        echo "To create it, run:"
+        echo "az containerapp create --name finsightai-api --resource-group FinSightAI-RG ..."
+        echo "Or create it manually in Azure Portal"
     
     - name: Deployment Status
       if: always()

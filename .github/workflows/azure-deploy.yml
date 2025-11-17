@@ -49,10 +49,7 @@ jobs:
     - name: Deployment Status
       if: always()
       run: |
-        if [ "${{ job.status }}" == "success" ]; then
-          echo "Workflow completed successfully"
-        else
-          echo "Note: Azure deployment steps may have been skipped if AZURE_CREDENTIALS secret is not configured"
-          echo "To enable deployment, add AZURE_CREDENTIALS secret in GitHub repository settings"
-        fi
+        echo "Workflow completed"
+        echo "Note: If Azure deployment failed, ensure AZURE_CREDENTIALS secret is configured"
+        echo "See: https://github.com/${{ github.repository }}/settings/secrets/actions"
 

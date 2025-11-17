@@ -1,0 +1,60 @@
+name: Automated API Probes
+
+on:
+  # Run during US stock market hours (9:30 AM - 4:00 PM ET)
+  # Market hours: 13:30-21:00 UTC (covers both EST/EDT)
+  # Runs every hour during trading hours (9 times per day)
+  schedule:
+    - cron: '30 13 * * 1-5'  # 1:30 PM UTC (8:30 AM ET / 9:30 AM EDT) - Market open
+    - cron: '0 14 * * 1-5'   # 2:00 PM UTC (9:00 AM ET / 10:00 AM EDT)
+    - cron: '0 15 * * 1-5'  # 3:00 PM UTC (10:00 AM ET / 11:00 AM EDT)
+    - cron: '0 16 * * 1-5'  # 4:00 PM UTC (11:00 AM ET / 12:00 PM EDT)
+    - cron: '0 17 * * 1-5'  # 5:00 PM UTC (12:00 PM ET / 1:00 PM EDT)
+    - cron: '0 18 * * 1-5'  # 6:00 PM UTC (1:00 PM ET / 2:00 PM EDT)
+    - cron: '0 19 * * 1-5'  # 7:00 PM UTC (2:00 PM ET / 3:00 PM EDT)
+    - cron: '0 20 * * 1-5'  # 8:00 PM UTC (3:00 PM ET / 4:00 PM EDT)
+    - cron: '0 21 * * 1-5'  # 9:00 PM UTC (4:00 PM ET / 5:00 PM EDT)
+  
+  # Allow manual triggering
+  workflow_dispatch:
+  
+  # Optional: Run on push to main branch (for testing)
+  # push:
+  #   branches:
+  #     - main
+
+jobs:
+  probe-api:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests kafka-python
+    
+    - name: Run probe script
+      env:
+        API_URL: ${{ secrets.API_URL }}
+        KAFKA_BROKER: ${{ secrets.KAFKA_BROKER }}
+        KAFKA_USERNAME: ${{ secrets.KAFKA_USERNAME }}
+        KAFKA_PASSWORD: ${{ secrets.KAFKA_PASSWORD }}
+      run: |
+        python scripts/probe.py
+    
+    - name: Probe summary
+      if: always()
+      run: |
+        echo "Probe execution completed at $(date)"
+        echo "Market hours probe: Testing API during US stock market trading hours"
+        echo "Check Kafka topics team05.reco_requests and team05.reco_responses for probe data"
+

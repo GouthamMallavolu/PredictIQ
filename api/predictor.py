@@ -80,12 +80,32 @@ class PredictionService:
     def load_models(self):
         """Load ML models and scaler"""
         logger.info("📦 Loading ML models and scaler...")
-        model_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
-        # Try current directory first, then parent
-        lstm_path = 'multi_stock_model_LSTM.keras' if os.path.exists('multi_stock_model_LSTM.keras') else os.path.join(model_dir, 'multi_stock_model_LSTM.keras')
-        rf_path = 'random_forest_model.pkl' if os.path.exists('random_forest_model.pkl') else os.path.join(model_dir, 'random_forest_model.pkl')
-        scaler_path = 'scaler.pkl' if os.path.exists('scaler.pkl') else os.path.join(model_dir, 'scaler.pkl')
+        # Model paths - check models/ subfolder, then current dir, then parent
+        def find_model_path(filename):
+            """Find model file in models/ subfolder, current dir, or parent dir"""
+            # Check models/ subfolder first
+            models_path = os.path.join('models', filename)
+            if os.path.exists(models_path):
+                return models_path
+            # Check current directory
+            if os.path.exists(filename):
+                return filename
+            # Check parent directory
+            model_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            parent_path = os.path.join(model_dir, filename)
+            if os.path.exists(parent_path):
+                return parent_path
+            # Check parent/models directory
+            parent_models_path = os.path.join(model_dir, 'models', filename)
+            if os.path.exists(parent_models_path):
+                return parent_models_path
+            # Return models/ path as default (will fail with clear error)
+            return models_path
+        
+        lstm_path = find_model_path('multi_stock_model_LSTM.keras')
+        rf_path = find_model_path('random_forest_model.pkl')
+        scaler_path = find_model_path('scaler.pkl')
         
         logger.info(f"  Loading LSTM from: {lstm_path}")
         self.lstm_model = load_model(lstm_path, compile=False)  # Skip compilation for faster loading

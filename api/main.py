@@ -12,6 +12,19 @@ from pydantic import BaseModel, Field
 
 from api.predictor import get_prediction_service
 
+# Import monitoring
+from api.monitoring import (
+    PrometheusMiddleware, 
+    metrics_endpoint, 
+    record_prediction, 
+    record_error,
+    update_health_status,
+    get_uptime_formatted
+)
+
+# Import provenance tracking
+from api.provenance import log_provenance
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -20,6 +33,9 @@ app = FastAPI(
     description="API for stock price predictions using ML models",
     version="1.0.0"
 )
+
+# Add Prometheus monitoring middleware
+app.add_middleware(PrometheusMiddleware)
 
 
 # Request/Response Schemas
@@ -92,18 +108,22 @@ async def health():
         )
         
         if not models_ready:
+            update_health_status(False)
             return JSONResponse(
                 status_code=200,  # Return 200 so Container App doesn't mark as unhealthy during startup
                 content={
                     "status": "starting",
                     "reason": "Models still loading",
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
+                    "uptime": get_uptime_formatted()
                 }
             )
         
+        update_health_status(True)
         return {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
+            "uptime": get_uptime_formatted(),
             "models_loaded": {
                 "LSTM": service.lstm_model is not None,
                 "RandomForest": service.rf_model is not None,
@@ -114,14 +134,32 @@ async def health():
         }
     except Exception as e:
         logger.error(f"Health check error: {e}", exc_info=True)
+        update_health_status(False)
         return JSONResponse(
             status_code=200,  # Don't fail health check on errors
             content={
                 "status": "error", 
                 "error": str(e),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "uptime": get_uptime_formatted()
             }
         )
+
+
+@app.get("/metrics")
+async def metrics():
+    """
+    Prometheus metrics endpoint.
+    
+    Exports metrics:
+    - http_requests_total: Total HTTP requests by method, endpoint, status
+    - http_request_duration_seconds: Request latency histogram
+    - model_predictions_total: Total predictions by model and status
+    - model_errors_total: Total errors by model and type
+    - api_uptime_seconds: API uptime in seconds
+    - api_health_status: Health status (1=healthy, 0=unhealthy)
+    """
+    return await metrics_endpoint()
 
 
 @app.get("/models")
@@ -160,9 +198,13 @@ async def recommend(request: RecommendRequest):
     Returns:
         RecommendResponse with predictions
     """
+        # Track request timing for provenance
+    import time
+    start_time = time.time()
+    
     try:
         logger.info(f"📊 Recommendation request: user={request.user_id}, symbols={request.symbols}, model={request.model}")
-        
+
         service = get_prediction_service()
         
         # Validate symbols
@@ -203,6 +245,22 @@ async def recommend(request: RecommendRequest):
             model_used=request.model or "all"
         )
         
+        # Record successful prediction
+        model_used = request.model or "all"
+        record_prediction(model_used, success=True)
+        
+        # Log provenance
+        latency_ms = (time.time() - start_time) * 1000
+        log_provenance(
+            request_id=request.user_id,
+            user_id=request.user_id,
+            input_symbols=request.symbols,
+            model=model_used,
+            predictions=results,
+            latency_ms=latency_ms,
+            status="success"
+        )
+        
         logger.info(f"✅ Successfully generated predictions for {len([r for r in results.values() if 'error' not in r])} symbols")
         return response
         
@@ -210,6 +268,28 @@ async def recommend(request: RecommendRequest):
         raise
     except Exception as e:
         logger.error(f"❌ Error in /recommend: {e}", exc_info=True)
+        
+        # Record failed prediction
+        model_used = request.model if request else "unknown"
+        record_prediction(model_used, success=False)
+        record_error(model_used, type(e).__name__)
+        
+        # Log provenance for error
+        try:
+            latency_ms = (time.time() - start_time) * 1000
+            log_provenance(
+                request_id=request.user_id if request else "unknown",
+                user_id=request.user_id if request else "unknown",
+                input_symbols=request.symbols if request else [],
+                model=model_used,
+                predictions={},
+                latency_ms=latency_ms,
+                status="error",
+                error=str(e)
+            )
+        except:
+            pass  # Don't fail on provenance logging
+        
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"

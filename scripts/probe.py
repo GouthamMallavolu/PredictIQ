@@ -15,15 +15,33 @@ from datetime import datetime, timedelta
 from kafka import KafkaProducer
 from kafka_pipeline.config import *
 import time
+import logging
+
+# Setup error logging
+log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs')
+os.makedirs(log_dir, exist_ok=True)
+
+error_log_file = os.path.join(log_dir, f'probe_errors_{datetime.now().strftime("%Y%m%d")}.log')
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(error_log_file),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # API URL (update after deployment)
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 def create_kafka_producer():
     """Create Kafka producer for reco topics"""
-    print(f"[INFO] Connecting to Kafka broker: {KAFKA_BROKER}")
-    print(f"[INFO] Using username: {SASL_USERNAME}")
-    print(f"[INFO] Password configured: {'Yes' if SASL_PASSWORD else 'No'}")
+    logger.info(f"Connecting to Kafka broker: {KAFKA_BROKER}")
+    logger.info(f"Using username: {SASL_USERNAME}")
+    logger.info(f"Password configured: {'Yes' if SASL_PASSWORD else 'No'}")
     
     try:
         producer = KafkaProducer(
@@ -43,29 +61,29 @@ def create_kafka_producer():
             enable_idempotence=False  # Disable idempotence for better compatibility
         )
         # Pre-fetch metadata for topics to avoid blocking during send
-        print("[INFO] Pre-fetching Kafka topic metadata...")
+        logger.info("Pre-fetching Kafka topic metadata...")
         try:
             # Get metadata with longer timeout
             metadata = producer.list_topics(timeout=20)
-            print(f"[OK] Found {len(metadata)} topics")
+            logger.info(f"Found {len(metadata)} topics")
             # Check if our topics exist
             topics = [topic for topic in metadata]
             if TOPIC_RECO_REQUESTS in topics:
-                print(f"[OK] Topic {TOPIC_RECO_REQUESTS} exists")
+                logger.info(f"Topic {TOPIC_RECO_REQUESTS} exists")
             else:
-                print(f"[WARN] Topic {TOPIC_RECO_REQUESTS} not found - may need to be created")
+                logger.warning(f"Topic {TOPIC_RECO_REQUESTS} not found - may need to be created")
             if TOPIC_RECO_RESPONSES in topics:
-                print(f"[OK] Topic {TOPIC_RECO_RESPONSES} exists")
+                logger.info(f"Topic {TOPIC_RECO_RESPONSES} exists")
             else:
-                print(f"[WARN] Topic {TOPIC_RECO_RESPONSES} not found - may need to be created")
+                logger.warning(f"Topic {TOPIC_RECO_RESPONSES} not found - may need to be created")
         except Exception as meta_error:
-            print(f"[WARN] Metadata pre-fetch failed: {meta_error}")
-            print("[WARN] Will attempt to send anyway - topics may be auto-created")
-        print("[OK] Kafka producer created successfully")
+            logger.warning(f"Metadata pre-fetch failed: {meta_error}")
+            logger.warning("Will attempt to send anyway - topics may be auto-created")
+        logger.info("Kafka producer created successfully")
         return producer
     except Exception as e:
-        print(f"[ERROR] Failed to create Kafka producer: {e}")
-        print(f"[ERROR] Error type: {type(e).__name__}")
+        logger.error(f"Failed to create Kafka producer: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
         raise
 
 def probe_api_for_datetime(target_datetime, producer):
@@ -83,36 +101,59 @@ def probe_api_for_datetime(target_datetime, producer):
         "model": "lstm"
     }
 
-    print(f"Sending probe request: {probe_id} for {target_datetime.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    
+        logger.info(f"Sending probe request: {probe_id} for {target_datetime.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+
     try:
         # Log request to Kafka (non-blocking, with timeout handling)
         try:
             # Use send with explicit timeout
             future = producer.send(TOPIC_RECO_REQUESTS, request_payload)
             # Don't wait for completion - just queue it
-            print("[OK] Request queued to Kafka (async)")
+            logger.info("Request queued to Kafka (async)")
         except Exception as kafka_error:
-            print(f"[ERROR] Failed to queue request to Kafka: {kafka_error}")
-            print(f"[ERROR] Error type: {type(kafka_error).__name__}")
+            logger.error(f"Failed to queue request to Kafka: {kafka_error}")
+            logger.error(f"Error type: {type(kafka_error).__name__}")
             # If it's a timeout, try to continue anyway - metadata might be cached
             if "Timeout" in str(type(kafka_error).__name__):
-                print("[WARN] Kafka timeout - continuing with API call, will retry Kafka later")
+                logger.warning("Kafka timeout - continuing with API call, will retry Kafka later")
             else:
                 raise  # Fail if Kafka is completely broken
 
         # Call API (reduced timeout for faster processing)
         start_time = datetime.now()
-        response = requests.post(
-            f"{API_URL}/recommend",
-            json=request_payload,
-            timeout=5  # Reduced from 10 to 5 seconds
-        )
-        latency_ms = (datetime.now() - start_time).total_seconds() * 1000
+        logger.info(f"Calling API: {API_URL}/recommend with symbols {request_payload['symbols']}")
         
-        if response.status_code == 200:
-            result = response.json()
+        try:
+            response = requests.post(
+                f"{API_URL}/recommend",
+                json=request_payload,
+                timeout=5  # Reduced from 10 to 5 seconds
+            )
+            latency_ms = (datetime.now() - start_time).total_seconds() * 1000
             
+            logger.info(f"API response received: status={response.status_code}, latency={latency_ms:.2f}ms")
+        except requests.exceptions.Timeout as timeout_error:
+            logger.error(f"API timeout after 5 seconds: {timeout_error}")
+            logger.error(f"Request payload: {json.dumps(request_payload, indent=2)}")
+            raise
+        except requests.exceptions.ConnectionError as conn_error:
+            logger.error(f"API connection error: {conn_error}")
+            logger.error(f"API URL: {API_URL}")
+            raise
+        except requests.exceptions.RequestException as req_error:
+            logger.error(f"API request error: {req_error}")
+            logger.error(f"Error type: {type(req_error).__name__}")
+            raise
+        
+                if response.status_code == 200:
+            try:
+                result = response.json()
+                logger.info("Successfully parsed API response JSON")
+            except json.JSONDecodeError as json_error:
+                logger.error(f"Failed to parse API response as JSON: {json_error}")
+                logger.error(f"Response content: {response.text[:500]}")
+                raise
+
             # Log response to Kafka with historical timestamp
             response_payload = {
                 "request_id": probe_id,
@@ -122,14 +163,15 @@ def probe_api_for_datetime(target_datetime, producer):
                 "num_predictions": len(result.get("results", {})),
                 "status": "success"
             }
-            
+
             try:
                 producer.send(TOPIC_RECO_RESPONSES, response_payload)
-                print("[OK] Response queued to Kafka")
+                logger.info("Response queued to Kafka")
             except Exception as kafka_error:
-                print(f"[ERROR] Failed to queue response to Kafka: {kafka_error}")
+                logger.error(f"Failed to queue response to Kafka: {kafka_error}")
                 raise  # Fail if Kafka is broken
-            
+
+            logger.info(f"Probe successful: latency={latency_ms:.2f}ms, results={len(result.get('results', {}))}, model={result.get('model_used')}")
             print(f"Probe successful:")
             print(f"   Latency: {latency_ms:.2f}ms")
             print(f"   Results: {len(result.get('results', {}))}")
@@ -152,6 +194,19 @@ def probe_api_for_datetime(target_datetime, producer):
             
             return response_payload
         else:
+            logger.error(f"API returned error status: {response.status_code}")
+            logger.error(f"Response content: {response.text[:500]}")
+            
+            # Check for specific error codes
+            if response.status_code == 429:
+                logger.error("Rate limit exceeded (429) - API is throttling requests")
+            elif response.status_code == 503:
+                logger.error("Service unavailable (503) - API may be down or overloaded")
+            elif response.status_code == 500:
+                logger.error("Internal server error (500) - API encountered an error")
+            elif response.status_code == 401 or response.status_code == 403:
+                logger.error(f"Authentication/Authorization error ({response.status_code})")
+            
             print(f"API error: {response.status_code}")
             error_payload = {
                 "request_id": probe_id,
@@ -162,22 +217,29 @@ def probe_api_for_datetime(target_datetime, producer):
             }
             try:
                 producer.send(TOPIC_RECO_RESPONSES, error_payload)
+                logger.info("Error logged to Kafka")
             except Exception as kafka_error:
-                print(f"[ERROR] Failed to queue error to Kafka: {kafka_error}")
+                logger.error(f"Failed to queue error to Kafka: {kafka_error}")
             return error_payload
 
     except Exception as e:
+        logger.error(f"Probe failed with exception: {e}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        logger.error(f"Request details: probe_id={probe_id}, target_time={target_datetime}")
+        
         print(f"Probe failed: {e}")
         error_payload = {
             "request_id": probe_id,
             "error": str(e),
+            "error_type": type(e).__name__,
             "timestamp": target_datetime.isoformat(),
             "status": "error"
         }
         try:
             producer.send(TOPIC_RECO_RESPONSES, error_payload)
+            logger.info("Exception logged to Kafka")
         except Exception as kafka_error:
-            print(f"[ERROR] Failed to queue error to Kafka: {kafka_error}")
+            logger.error(f"Failed to queue error to Kafka: {kafka_error}")
         return error_payload
     finally:
         pass  # Don't flush/close here - will be done after all probes
@@ -213,7 +275,14 @@ def probe_nov1_7():
     Only trading days (Nov 1, 4, 5, 6, 7)
     During market hours with 1-hour gaps
     """
+    logger.info("="*60)
+    logger.info("Starting Probe Processing for Nov 1-7, 2024")
+    logger.info(f"Error log file: {error_log_file}")
+    logger.info("="*60)
+    
     print("Starting Probe Processing for Nov 1-7, 2024")
+    print("=" * 60)
+    print(f"Error log: {error_log_file}")
     print("=" * 60)
 
     producer = create_kafka_producer()

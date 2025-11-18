@@ -320,14 +320,26 @@ def probe_nov1_7():
     # Flush producer after all probes
     try:
         producer.flush(timeout=30)
+        logger.info("All Kafka messages flushed")
         print("\n[OK] All Kafka messages flushed")
     except Exception as e:
+        logger.warning(f"Failed to flush Kafka producer: {e}")
         print(f"\n[WARN] Failed to flush Kafka producer: {e}")
     try:
         producer.close(timeout=10)
+        logger.info("Kafka producer closed")
         print("[OK] Kafka producer closed")
     except Exception as e:
+        logger.warning(f"Failed to close Kafka producer: {e}")
         print(f"[WARN] Failed to close Kafka producer: {e}")
+
+    logger.info("="*60)
+    logger.info("Probe Processing Complete!")
+    logger.info(f"Total probes: {total_probes}")
+    logger.info(f"Successful: {successful_probes}")
+    logger.info(f"Failed: {total_probes - successful_probes}")
+    logger.info(f"Error log saved to: {error_log_file}")
+    logger.info("="*60)
 
     print("\n" + "=" * 60)
     print(f"Probe Processing Complete!")
@@ -337,7 +349,8 @@ def probe_nov1_7():
     print(f"\nProbe records written to:")
     print(f"   - {TOPIC_RECO_REQUESTS}")
     print(f"   - {TOPIC_RECO_RESPONSES}")
-    print(f"\nNote: Timestamps are set to Nov 1-7, 2024 for historical data")
+    print(f"\nError log: {error_log_file}")
+    print(f"Note: Timestamps are set to Nov 1-7, 2024 for historical data")
 
 if __name__ == "__main__":
     probe_nov1_7()

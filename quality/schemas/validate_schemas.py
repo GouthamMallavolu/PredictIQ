@@ -66,8 +66,15 @@ def validate_stock_data(df: pd.DataFrame) -> tuple[bool, Optional[str]]:
     try:
         stock_data_schema.validate(df, lazy=True)
         return True, None
-    except pa.errors.SchemaError as e:
-        return False, str(e)
+    except (pa.errors.SchemaError, pa.errors.SchemaErrors) as e:
+        # Extract error message from SchemaErrors
+        if hasattr(e, 'schema_errors'):
+            error_msg = str(e.schema_errors)
+        else:
+            error_msg = str(e)
+        return False, error_msg
+    except Exception as e:
+        return False, f"Validation error: {str(e)}"
 
 def validate_api_request(request: dict) -> tuple[bool, Optional[str]]:
     """

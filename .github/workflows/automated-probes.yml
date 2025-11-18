@@ -50,7 +50,7 @@ jobs:
         KAFKA_USERNAME: ${{ secrets.KAFKA_USERNAME }}
         KAFKA_PASSWORD: ${{ secrets.KAFKA_PASSWORD }}
       run: |
-        python scripts/probe.py
+        python scripts/probe.py --single
     
     - name: Probe summary
       if: always()

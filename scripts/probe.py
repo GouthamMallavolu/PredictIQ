@@ -352,6 +352,69 @@ def probe_nov1_7():
     print(f"\nError log: {error_log_file}")
     print(f"Note: Timestamps are set to Nov 1-7, 2024 for historical data")
 
+def probe_single():
+    """
+    Run a single probe for current time
+    Use this for continuous monitoring (GitHub Actions hourly probes)
+    """
+    logger.info("="*60)
+    logger.info("Running Single Probe (Current Time)")
+    logger.info(f"Error log file: {error_log_file}")
+    logger.info("="*60)
+    
+    print("Running Single Probe (Current Time)")
+    print("=" * 60)
+    print(f"Error log: {error_log_file}")
+    print("=" * 60)
+    
+    producer = create_kafka_producer()
+    
+    # Use current time for the probe
+    current_time = datetime.now()
+    
+    try:
+        probe_api_for_datetime(current_time, producer)
+        logger.info("Single probe completed successfully")
+        print("\n[OK] Single probe completed successfully")
+    except Exception as e:
+        logger.error(f"Single probe failed: {e}")
+        print(f"\n[ERROR] Single probe failed: {e}")
+    finally:
+        # Flush producer
+        try:
+            producer.flush(timeout=10)
+            logger.info("Kafka messages flushed")
+        except Exception as e:
+            logger.warning(f"Failed to flush Kafka producer: {e}")
+        try:
+            producer.close(timeout=5)
+            logger.info("Kafka producer closed")
+        except Exception as e:
+            logger.warning(f"Failed to close Kafka producer: {e}")
+    
+    logger.info("="*60)
+    logger.info(f"Error log saved to: {error_log_file}")
+    logger.info("="*60)
+    
+    print("\n" + "=" * 60)
+    print(f"Error log: {error_log_file}")
+    print("=" * 60)
+
 if __name__ == "__main__":
-    probe_nov1_7()
+    import sys
+    
+    # Check if we should run single probe or historical batch
+    if len(sys.argv) > 1 and sys.argv[1] == "--single":
+        # Single probe mode (for GitHub Actions)
+        probe_single()
+    elif len(sys.argv) > 1 and sys.argv[1] == "--historical":
+        # Historical batch mode (for initial data generation)
+        probe_nov1_7()
+    else:
+        # Default: show usage
+        print("Usage:")
+        print("  python scripts/probe.py --single       # Run single probe (for continuous monitoring)")
+        print("  python scripts/probe.py --historical   # Generate historical data (Nov 1-7)")
+        print("\nFor GitHub Actions hourly probes, use --single")
+        print("For initial data generation, use --historical")
 

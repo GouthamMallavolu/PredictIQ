@@ -25,6 +25,9 @@ from api.monitoring import (
 # Import provenance tracking
 from api.provenance import log_provenance
 
+# Import A/B testing
+from api.ab_testing import get_ab_variant, get_model_for_variant, log_ab_result, get_ab_metrics, AB_TEST_ENABLED
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -162,6 +165,20 @@ async def metrics():
     return await metrics_endpoint()
 
 
+@app.get("/ab-test-metrics")
+async def ab_test_metrics(date: Optional[str] = None):
+    """
+    Get A/B test metrics.
+    
+    Args:
+        date: Date string (YYYYMMDD) or None for today
+    
+    Returns:
+        A/B test metrics including success rates, latencies, and error rates for each variant
+    """
+    return get_ab_metrics(date)
+
+
 @app.get("/models")
 async def list_models():
     """List available models"""
@@ -201,6 +218,16 @@ async def recommend(request: RecommendRequest):
         # Track request timing for provenance
     import time
     start_time = time.time()
+    
+    # A/B Testing: Assign variant if no model specified and AB testing enabled
+    ab_variant = None
+    original_model_request = request.model
+    
+    if AB_TEST_ENABLED and (request.model is None or request.model == "all"):
+        ab_variant = get_ab_variant(request.user_id)
+        assigned_model = get_model_for_variant(ab_variant)
+        request.model = assigned_model
+        logger.info(f"A/B Test: User {request.user_id} assigned to variant {ab_variant} (model: {assigned_model})")
     
     try:
         logger.info(f"📊 Recommendation request: user={request.user_id}, symbols={request.symbols}, model={request.model}")
@@ -261,6 +288,18 @@ async def recommend(request: RecommendRequest):
             status="success"
         )
         
+        # Log A/B test result if applicable
+        if ab_variant:
+            log_ab_result(
+                user_id=request.user_id,
+                variant=ab_variant,
+                model=model_used,
+                symbols=request.symbols,
+                predictions=results,
+                latency_ms=latency_ms,
+                success=True
+            )
+        
         logger.info(f"✅ Successfully generated predictions for {len([r for r in results.values() if 'error' not in r])} symbols")
         return response
         
@@ -287,8 +326,21 @@ async def recommend(request: RecommendRequest):
                 status="error",
                 error=str(e)
             )
+            
+            # Log A/B test result for error
+            if ab_variant:
+                log_ab_result(
+                    user_id=request.user_id if request else "unknown",
+                    variant=ab_variant,
+                    model=model_used,
+                    symbols=request.symbols if request else [],
+                    predictions={},
+                    latency_ms=latency_ms,
+                    success=False,
+                    error=str(e)
+                )
         except:
-            pass  # Don't fail on provenance logging
+            pass  # Don't fail on logging
         
         raise HTTPException(
             status_code=500,

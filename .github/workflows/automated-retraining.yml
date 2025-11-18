@@ -1,0 +1,107 @@
+name: Automated Model Retraining
+
+on:
+  schedule:
+    # Run twice daily at 2 AM and 2 PM UTC (adjust for your needs)
+    - cron: '0 2 * * *'   # 2 AM UTC daily
+    - cron: '0 14 * * *'  # 2 PM UTC daily
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      version:
+        description: 'Model version (e.g., v1.1) or leave empty for auto-increment'
+        required: false
+        default: ''
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Full history for git operations
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run retraining script
+        env:
+          GIT_SHA: ${{ github.sha }}
+          ENVIRONMENT: production
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            python scripts/retrain_models.py --version ${{ github.event.inputs.version }}
+          else
+            python scripts/retrain_models.py --auto-version
+          fi
+      
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: retrained-models-${{ github.run_id }}
+          path: |
+            model_registry/
+            models/VERSION
+            models/metadata.json
+            logs/retraining_history.jsonl
+          retention-days: 30
+      
+      - name: Create retraining report
+        if: always()
+        run: |
+          echo "## Model Retraining Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run ID:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "**Git SHA:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f models/VERSION ]; then
+            echo "**Model Version:** $(cat models/VERSION)" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -f models/metadata.json ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Metadata" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat models/metadata.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Retraining History" >> $GITHUB_STEP_SUMMARY
+          if [ -f logs/retraining_history.jsonl ]; then
+            echo "Last 5 retraining runs:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -5 logs/retraining_history.jsonl >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      # Optional: Commit and push updated models to repo
+      # Uncomment if you want to version models in git (not recommended for large files)
+      # - name: Commit updated models
+      #   run: |
+      #     git config --local user.email "action@github.com"
+      #     git config --local user.name "GitHub Action"
+      #     git add model_registry/ models/VERSION models/metadata.json logs/retraining_history.jsonl
+      #     git commit -m "Automated retraining: $(cat models/VERSION)" || echo "No changes to commit"
+      #     git push
+      
+      # Optional: Upload to Azure Blob Storage
+      # - name: Upload to Azure Blob Storage
+      #   env:
+      #     AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+      #   run: |
+      #     VERSION=$(cat models/VERSION)
+      #     az storage blob upload-batch \
+      #       --destination model-registry \
+      #       --source model_registry/$VERSION \
+      #       --destination-path $VERSION

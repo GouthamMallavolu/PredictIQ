@@ -29,21 +29,36 @@ def create_kafka_consumer():
     )
     return consumer
 
-def fetch_recent_responses(hours=24):
+def fetch_recent_responses(hours=24, use_historical=False, historical_date_range=None):
     """
     Fetch recent responses from Kafka
     
     Args:
-        hours: Number of hours to look back
+        hours: Number of hours to look back (ignored if use_historical=True)
+        use_historical: If True, fetch historical data from Nov 1-7, 2024
+        historical_date_range: Tuple of (start_date, end_date) for historical data
     
     Returns:
         List of response records
     """
     consumer = create_kafka_consumer()
     responses = []
-    cutoff_time = datetime.now() - timedelta(hours=hours)
     
-    print(f"Fetching responses from last {hours} hours...")
+    if use_historical:
+        # Use historical date range (Nov 1-7, 2024)
+        if historical_date_range:
+            start_date, end_date = historical_date_range
+        else:
+            start_date = datetime(2024, 11, 1)
+            end_date = datetime(2024, 11, 7, 23, 59, 59)
+        
+        print(f"Fetching historical responses from {start_date.date()} to {end_date.date()}...")
+        cutoff_time = start_date
+        end_time = end_date
+    else:
+        cutoff_time = datetime.now() - timedelta(hours=hours)
+        end_time = datetime.now()
+        print(f"Fetching responses from last {hours} hours...")
     
     try:
         for message in consumer:
@@ -54,12 +69,22 @@ def fetch_recent_responses(hours=24):
             if 'timestamp' in record:
                 try:
                     record_time = pd.to_datetime(record['timestamp'])
-                    if record_time >= cutoff_time:
-                        responses.append(record)
+                    if use_historical:
+                        # For historical data, check if timestamp is in range
+                        if cutoff_time <= record_time <= end_time:
+                            responses.append(record)
+                    else:
+                        # For recent data, check if timestamp is after cutoff
+                        if record_time >= cutoff_time:
+                            responses.append(record)
                 except:
-                    responses.append(record)  # Include if timestamp parsing fails
+                    # Include if timestamp parsing fails (for backward compatibility)
+                    if not use_historical:
+                        responses.append(record)
             else:
-                responses.append(record)
+                # No timestamp - include only if not using historical filter
+                if not use_historical:
+                    responses.append(record)
             
             if len(responses) >= 1000:  # Limit to prevent memory issues
                 break
@@ -204,25 +229,46 @@ def compute_online_kpis(responses):
     
     return kpis
 
-def evaluate_online(hours=24):
+def evaluate_online(hours=24, use_historical=False, historical_date_range=None):
     """
     Complete online evaluation pipeline
     
     Args:
-        hours: Number of hours to look back
+        hours: Number of hours to look back (ignored if use_historical=True)
+        use_historical: If True, evaluate historical data from Nov 1-7, 2024
+        historical_date_range: Tuple of (start_date, end_date) for historical data
     
     Returns:
         dict with evaluation results
     """
-    print(f"\n{'='*60}")
-    print(f"Online Evaluation (last {hours} hours)")
-    print(f"{'='*60}")
+    if use_historical:
+        if historical_date_range:
+            start_date, end_date = historical_date_range
+        else:
+            start_date = datetime(2024, 11, 1)
+            end_date = datetime(2024, 11, 7, 23, 59, 59)
+        print(f"\n{'='*60}")
+        print(f"Online Evaluation (Historical: {start_date.date()} to {end_date.date()})")
+        print(f"{'='*60}")
+    else:
+        print(f"\n{'='*60}")
+        print(f"Online Evaluation (last {hours} hours)")
+        print(f"{'='*60}")
     
     # Fetch responses from Kafka
-    responses = fetch_recent_responses(hours=hours)
+    responses = fetch_recent_responses(
+        hours=hours, 
+        use_historical=use_historical,
+        historical_date_range=historical_date_range
+    )
     
     if len(responses) == 0:
-        print("No responses found in the specified time window")
+        if use_historical:
+            print(f"No responses found for historical date range {start_date.date()} to {end_date.date()}")
+            print("Note: Make sure probe script has been run to generate historical data")
+        else:
+            print(f"No responses found in the last {hours} hours")
+            print("Note: Try using use_historical=True to evaluate historical probe data (Nov 1-7, 2024)")
         return {}
     
     # Compute KPIs
@@ -245,6 +291,19 @@ def evaluate_online(hours=24):
 
 if __name__ == "__main__":
     # Run online evaluation
-    results = evaluate_online(hours=24)
+    # Since we don't have data for today, use historical data from Nov 1-7, 2024
+    print("Note: Using historical data mode (Nov 1-7, 2024)")
+    print("This matches the probe script's historical data generation")
+    print()
+    
+    results = evaluate_online(use_historical=True)
+    
+    if not results:
+        print("\nNo historical data found. Make sure to:")
+        print("1. Run the probe script to generate historical data:")
+        print("   python scripts/probe.py")
+        print("2. Or wait for the GitHub Actions workflow to run")
+        print("3. Then run this evaluation script again")
+    
     print(f"\nEvaluation complete!")
 

@@ -101,7 +101,7 @@ def probe_api_for_datetime(target_datetime, producer):
         "model": "lstm"
     }
 
-        logger.info(f"Sending probe request: {probe_id} for {target_datetime.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    logger.info(f"Sending probe request: {probe_id} for {target_datetime.strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
     try:
         # Log request to Kafka (non-blocking, with timeout handling)
@@ -145,7 +145,7 @@ def probe_api_for_datetime(target_datetime, producer):
             logger.error(f"Error type: {type(req_error).__name__}")
             raise
         
-                if response.status_code == 200:
+        if response.status_code == 200:
             try:
                 result = response.json()
                 logger.info("Successfully parsed API response JSON")

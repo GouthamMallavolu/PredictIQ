@@ -90,23 +90,32 @@ def train_models():
         print("  [INFO] Models already exist, skipping training")
         return True, {"note": "Training skipped - models already exist"}
 
-    try:
-        # Load and prepare data
-        print("  Loading training data...")
-        df = load_merged_data()
-        df = prepare_features(df)
-        train_df, test_df = train_test_split_by_time(df, train_ratio=0.8)
+      try:
+          # Step 1: Load data from Azure Blob Storage or local file
+          print("  [Step 1/5] Loading training data...")
+          df = load_merged_data()
+          print(f"  ✓ Loaded {len(df)} raw records")
+          
+          # Step 2: Data cleaning and feature engineering
+          print("  [Step 2/5] Data cleaning and feature engineering...")
+          df = prepare_features(df)
+          print(f"  ✓ Prepared {len(df)} records with features")
+          
+          # Step 3: Train/test split
+          print("  [Step 3/5] Splitting data into train/test sets...")
+          train_df, test_df = train_test_split_by_time(df, train_ratio=0.8)
+          print(f"  ✓ Training set: {len(train_df)} records")
+          print(f"  ✓ Test set: {len(test_df)} records")
         
-        # Train LSTM
-        print("  Training LSTM model...")
+        # Step 4: Train LSTM
+        print("  [Step 4/5] Training LSTM model...")
         X_lstm, y_lstm = prepare_lstm_data(train_df)
         lstm_model, lstm_scaler, lstm_metrics = train_lstm_model(X_lstm, y_lstm)
         
-        # Train Random Forest
-        print("  Training Random Forest model...")
+        # Step 5: Train Random Forest and Moving Average
+        print("  [Step 5/5] Training Random Forest model...")
         rf_model, rf_metrics = train_random_forest_model(train_df)
         
-        # Train Moving Average
         print("  Training Moving Average baseline...")
         ma_model, ma_metrics = train_moving_average_model(train_df)
         

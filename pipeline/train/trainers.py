@@ -38,27 +38,74 @@ def load_merged_data():
     print(f"   Container: {blob_container if blob_container else 'NOT SET'}")
     print(f"   Blob name: {blob_name if blob_name else 'NOT SET'}")
 
-    if blob_connection_string and blob_container and blob_name:
+    if blob_connection_string and blob_container:
         try:
             from azure.storage.blob import BlobServiceClient
-            print(f"📊 Downloading data from Azure Blob Storage: {blob_container}/{blob_name}")
-
-            blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)                                                              
-            blob_client = blob_service_client.get_blob_client(container=blob_container, blob=blob_name)
+            blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)
+            container_client = blob_service_client.get_container_client(blob_container)
             
-            # Download blob to memory
-            download_stream = blob_client.download_blob()
-            df = pd.read_csv(download_stream)
+            # Try to find Merged_dataset.csv in common locations
+            possible_paths = [
+                blob_name,  # Explicit blob name from env var
+                'Merged_dataset.csv',  # Root level
+                'v1/Merged_dataset.csv',  # In v1 folder
+                'data/Merged_dataset.csv',  # In data folder
+            ]
             
-            print(f"✅ Loaded {len(df)} records from Azure Blob Storage")
-            return df
+            df = None
+            for path in possible_paths:
+                if not path or path.strip() == '':
+                    continue
+                try:
+                    print(f"🔍 Trying to load: {blob_container}/{path}")
+                    blob_client = blob_service_client.get_blob_client(container=blob_container, blob=path)
+                    if blob_client.exists():
+                        download_stream = blob_client.download_blob()
+                        df = pd.read_csv(download_stream)
+                        print(f"✅ Loaded {len(df)} records from Azure Blob Storage: {path}")
+                        return df
+                except Exception as e:
+                    continue  # Try next path
+            
+            # If Merged_dataset.csv not found, try to merge all CSV files
+            if df is None:
+                print("⚠️  Merged_dataset.csv not found. Searching for CSV files to merge...")
+                all_blobs = container_client.list_blobs(name_starts_with='')
+                csv_files = [blob.name for blob in all_blobs if blob.name.endswith('.csv')]
+                
+                if csv_files:
+                    print(f"📊 Found {len(csv_files)} CSV files. Merging...")
+                    dfs = []
+                    for csv_path in csv_files[:100]:  # Limit to first 100 files to avoid memory issues
+                        try:
+                            blob_client = blob_service_client.get_blob_client(container=blob_container, blob=csv_path)
+                            download_stream = blob_client.download_blob()
+                            df_part = pd.read_csv(download_stream)
+                            dfs.append(df_part)
+                            print(f"   ✓ Loaded {len(df_part)} records from {csv_path}")
+                        except Exception as e:
+                            print(f"   ⚠️  Skipped {csv_path}: {e}")
+                            continue
+                    
+                    if dfs:
+                        df = pd.concat(dfs, ignore_index=True)
+                        print(f"✅ Merged {len(df)} total records from {len(dfs)} CSV files")
+                        return df
+                    else:
+                        print("❌ No CSV files could be loaded")
+                else:
+                    print("❌ No CSV files found in blob storage")
+            
+            print("⚠️  Could not load data from Azure Blob Storage")
+            print("   Falling back to local file...")
+            
         except ImportError:
-            print("⚠️  azure-storage-blob not installed. Install with: pip install azure-storage-blob")
+            print("⚠️  azure-storage-blob not installed. Install with: pip install azure-storage-blob")                                                      
             print("   Falling back to local file...")
         except Exception as e:
             print(f"⚠️  Failed to load from Azure Blob Storage: {e}")
-            if not blob_container or not blob_name:
-                print(f"   Missing required values: container='{blob_container}', blob_name='{blob_name}'")
+            import traceback
+            traceback.print_exc()
             print("   Falling back to local file...")
     else:
         print("⚠️  Azure Blob Storage not configured (missing connection string, container, or blob name)")
@@ -89,28 +136,122 @@ def load_merged_data():
 
 
 def prepare_features(df):
-    """Prepare features for model training using existing features from merged dataset"""
-    print("🔧 Preparing features from merged dataset...")
+    """
+    Prepare features for model training with data cleaning and feature engineering.
+    Handles both pre-processed merged datasets and raw data.
+    """
+    print("🔧 Preparing features with data cleaning and feature engineering...")
     
-    # The merged dataset already has technical indicators, so we'll use those
-    # Available features: time, open, high, low, volume, symbol, close, sentiment_mean, 
-    # news_count, return, log_return, ema_10, ema_50, rsi, macd, bb_high, bb_low, atr, close_next
+    # Data Cleaning Step 1: Ensure required columns exist
+    required_cols = ['time', 'symbol', 'open', 'high', 'low', 'close', 'volume']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
     
-    # Use close_next as target (next hour price)
+    # Data Cleaning Step 2: Convert time to datetime if needed
+    if 'time' in df.columns:
+        df['time'] = pd.to_datetime(df['time'], errors='coerce')
+        df = df.sort_values('time')
+    
+    # Data Cleaning Step 3: Remove invalid price data
+    df = df[(df['open'] > 0) & (df['high'] > 0) & (df['low'] > 0) & (df['close'] > 0)]
+    df = df[df['high'] >= df['low']]  # High should be >= Low
+    df = df[df['high'] >= df['close']]  # High should be >= Close
+    df = df[df['low'] <= df['close']]  # Low should be <= Close
+    
+    # Data Cleaning Step 4: Handle volume
+    df['volume'] = df['volume'].fillna(0).clip(lower=0)
+    
+    # Feature Engineering: Calculate returns if not present
+    if 'return' not in df.columns:
+        df['return'] = df.groupby('symbol')['close'].pct_change()
+    if 'log_return' not in df.columns:
+        df['log_return'] = np.log1p(df['return'].fillna(0))
+    
+    # Feature Engineering: Calculate technical indicators if not present
+    def calculate_technical_indicators(group):
+        """Calculate technical indicators for a single symbol"""
+        group = group.sort_values('time')
+        
+        # EMA
+        if 'ema_10' not in group.columns:
+            group['ema_10'] = group['close'].ewm(span=10, adjust=False).mean()
+        if 'ema_50' not in group.columns:
+            group['ema_50'] = group['close'].ewm(span=50, adjust=False).mean()
+        
+        # RSI
+        if 'rsi' not in group.columns:
+            delta = group['close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            group['rsi'] = 100 - (100 / (1 + rs))
+        
+        # MACD
+        if 'macd' not in group.columns:
+            ema_12 = group['close'].ewm(span=12, adjust=False).mean()
+            ema_26 = group['close'].ewm(span=26, adjust=False).mean()
+            group['macd'] = ema_12 - ema_26
+        
+        # Bollinger Bands
+        if 'bb_high' not in group.columns or 'bb_low' not in group.columns:
+            rolling_mean = group['close'].rolling(window=20).mean()
+            rolling_std = group['close'].rolling(window=20).std()
+            group['bb_high'] = rolling_mean + (rolling_std * 2)
+            group['bb_low'] = rolling_mean - (rolling_std * 2)
+        
+        # ATR (Average True Range)
+        if 'atr' not in group.columns:
+            high_low = group['high'] - group['low']
+            high_close = np.abs(group['high'] - group['close'].shift())
+            low_close = np.abs(group['low'] - group['close'].shift())
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            group['atr'] = true_range.rolling(window=14).mean()
+        
+        return group
+    
+    # Apply technical indicators per symbol
+    if 'symbol' in df.columns and df['symbol'].nunique() > 1:
+        print("   Calculating technical indicators per symbol...")
+        df = df.groupby('symbol', group_keys=False).apply(calculate_technical_indicators).reset_index(drop=True)
+    else:
+        print("   Calculating technical indicators...")
+        df = calculate_technical_indicators(df).reset_index(drop=True)
+    
+    # Feature Engineering: Handle sentiment and news (fill missing with defaults)
+    if 'sentiment_mean' not in df.columns:
+        df['sentiment_mean'] = 0.0
+    if 'news_count' not in df.columns:
+        df['news_count'] = 0
+    df['sentiment_mean'] = df['sentiment_mean'].fillna(0.0)
+    df['news_count'] = df['news_count'].fillna(0)
+    
+    # Feature Engineering: Create target (next hour's close price)
+    if 'close_next' not in df.columns:
+        if 'symbol' in df.columns:
+            df['close_next'] = df.groupby('symbol')['close'].shift(-1)
+        else:
+            df['close_next'] = df['close'].shift(-1)
+    
+    # Use close_next as target
     df['target'] = df['close_next']
     
     # Select features for training
     feature_columns = [
-        'open', 'high', 'low', 'close', 'volume', 
+        'open', 'high', 'low', 'close', 'volume',
         'sentiment_mean', 'news_count', 'return', 'log_return',
         'ema_10', 'ema_50', 'rsi', 'macd', 'bb_high', 'bb_low', 'atr'
     ]
     
-    # Remove rows with NaN values
+    # Data Cleaning Step 5: Remove rows with NaN values in features or target
+    initial_count = len(df)
     df = df.dropna(subset=feature_columns + ['target'])
+    removed_count = initial_count - len(df)
+    if removed_count > 0:
+        print(f"   Removed {removed_count} rows with missing values")
     
     print(f"✅ Features prepared: {len(df)} records with {len(feature_columns)} features")
-    print(f"   Features: {feature_columns}")
+    print(f"   Features: {', '.join(feature_columns)}")
     return df
 
 def train_test_split_by_time(df, train_ratio=0.8):

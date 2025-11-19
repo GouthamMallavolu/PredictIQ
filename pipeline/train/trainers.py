@@ -69,6 +69,34 @@ def load_merged_data():
                             download_stream = blob_client.download_blob()
                             parquet_data = BytesIO(download_stream.readall())
                             df_part = pq.read_table(parquet_data).to_pandas()
+                            
+                            # --- Start: Extract time from path ---
+                            import re
+                            date_str, hour_str = None, "00"
+                            
+                            date_match = re.search(r'date=(\d{4}-\d{2}-\d{2})', parquet_path)
+                            if date_match:
+                                date_str = date_match.group(1)
+                            
+                            hour_match = re.search(r'hour=(\d{2})', parquet_path)
+                            if hour_match:
+                                hour_str = hour_match.group(1)
+                            
+                            if date_str:
+                                # Create the 'time' column if it doesn't exist
+                                if 'time' not in df_part.columns and 'timestamp' not in df_part.columns:
+                                    df_part['time'] = pd.to_datetime(f'{date_str} {hour_str}:00:00', utc=True)
+                                elif 'timestamp' in df_part.columns:
+                                    # Rename if a timestamp column already exists
+                                    df_part.rename(columns={'timestamp': 'time'}, inplace=True)
+                            else:
+                                print(f"   ⚠️  Could not extract date from path: {parquet_path}")
+                            # --- End: Extract time from path ---
+                            
+                            # Debug: Print columns of the first loaded file
+                            if not dfs:
+                                print(f"   First Parquet file columns: {df_part.columns.tolist()}")
+
                             dfs.append(df_part)
                             if len(dfs) % 10 == 0:  # Progress update every 10 files
                                 print(f"   ✓ Loaded {len(dfs)} files, {sum(len(d) for d in dfs)} records so far...")

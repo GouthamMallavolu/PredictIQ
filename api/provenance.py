@@ -219,7 +219,6 @@ def get_provenance_trace(request_id: str) -> Optional[Dict[str, Any]]:
 
 def flush_provenance():
     """Flush provenance logs to Kafka"""
-    global _provenance_producer
     if _provenance_producer:
         try:
             _provenance_producer.flush(timeout=5)

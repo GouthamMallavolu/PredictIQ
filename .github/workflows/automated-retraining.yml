@@ -1,5 +1,8 @@
 name: Automated Model Retraining
 
+permissions:
+  actions: write
+
 # Automated retraining workflow - runs on schedule and manual trigger
 on:
   # Allow manual trigger from GitHub Actions UI

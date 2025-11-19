@@ -1,0 +1,154 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, development ]
+  pull_request:
+    branches: [ main, development ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov pytest-mock flake8 black mypy
+        pip install pandera scipy matplotlib seaborn
+    
+    - name: Lint with flake8
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      continue-on-error: true
+    
+    - name: Format check with black
+      run: |
+        black --check --diff .
+      continue-on-error: true
+    
+    - name: Run tests with coverage
+      run: |
+        pytest tests/ --cov=api --cov=pipeline --cov-report=xml --cov-report=html --cov-report=term-missing --cov-config=.coveragerc                                                  
+      continue-on-error: true
+
+    - name: Upload coverage to artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: coverage-report
+        path: htmlcov/
+        if-no-files-found: ignore
+    
+    - name: Coverage summary
+      run: |
+        if [ -f coverage.xml ]; then
+          coverage report --config-file=.coveragerc || echo "Coverage report generated"
+        fi
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Azure Container Registry
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+      continue-on-error: true
+
+    - name: Build Docker image
+      run: |
+        docker build -t finsightai-api:${{ github.sha }} .
+        docker tag finsightai-api:${{ github.sha }} finsightai-api:latest
+
+    - name: Push Docker image to ACR
+      env:
+        ACR_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      run: |
+        if [ -n "$ACR_SERVER" ]; then
+          docker tag finsightai-api:${{ github.sha }} $ACR_SERVER/finsightai-api:${{ github.sha }}
+          docker tag finsightai-api:${{ github.sha }} $ACR_SERVER/finsightai-api:latest
+          docker push $ACR_SERVER/finsightai-api:${{ github.sha }}
+          docker push $ACR_SERVER/finsightai-api:latest
+        else
+          echo "ACR_LOGIN_SERVER secret not configured. Skipping push to ACR."
+          echo "Docker image built locally: finsightai-api:${{ github.sha }}"
+        fi
+      continue-on-error: true
+
+    - name: Build Consumer Docker image
+      run: |
+        docker build -f Dockerfile.consumer -t finsightai-consumer:${{ github.sha }} .
+        docker tag finsightai-consumer:${{ github.sha }} finsightai-consumer:latest
+
+    - name: Push Consumer Docker image to ACR
+      env:
+        ACR_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      run: |
+        if [ -n "$ACR_SERVER" ]; then
+          docker tag finsightai-consumer:${{ github.sha }} $ACR_SERVER/finsightai-consumer:${{ github.sha }}
+          docker tag finsightai-consumer:${{ github.sha }} $ACR_SERVER/finsightai-consumer:latest
+          docker push $ACR_SERVER/finsightai-consumer:${{ github.sha }}
+          docker push $ACR_SERVER/finsightai-consumer:latest
+        else
+          echo "ACR_LOGIN_SERVER secret not configured. Skipping push to ACR."
+          echo "Docker image built locally: finsightai-consumer:${{ github.sha }}"
+        fi
+      continue-on-error: true
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      continue-on-error: true
+    
+    - name: Deploy API to Azure Container Apps
+      run: |
+        az containerapp update \
+          --name finsightai-api \
+          --resource-group finsightai-resourcegroup \
+          --image ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:${{ github.sha }}
+      continue-on-error: true
+
+    - name: Deploy Consumer to Azure Container Apps
+      run: |
+        # Check if consumer app exists, update if it does, create if it doesn't
+        if az containerapp show --name finsightai-consumer --resource-group finsightai-resourcegroup &>/dev/null 2>&1; then
+          az containerapp update \
+            --name finsightai-consumer \
+            --resource-group finsightai-resourcegroup \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-consumer:${{ github.sha }}
+        else
+          echo "Consumer container app does not exist. Skipping deployment."
+          echo "Run the deploy-consumer workflow or use azure-deploy-consumer.sh script to create it."
+        fi
+      continue-on-error: true
+

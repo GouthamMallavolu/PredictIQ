@@ -17,11 +17,12 @@ on:
   
   # Allow manual triggering
   workflow_dispatch:
-  
-  # Optional: Run on push to main branch (for testing)
-  # push:
-  #   branches:
-  #     - main
+
+  # Run on push to development/main for testing and visibility
+  push:
+    branches:
+      - development
+      - main
 
 jobs:
   probe-api:
@@ -40,7 +41,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests kafka-python
+        pip install requests kafka-python python-dotenv
     
     - name: Run probe script
       env:
@@ -49,7 +50,7 @@ jobs:
         KAFKA_USERNAME: ${{ secrets.KAFKA_USERNAME }}
         KAFKA_PASSWORD: ${{ secrets.KAFKA_PASSWORD }}
       run: |
-        python scripts/probe.py
+        python scripts/probe.py --single
     
     - name: Probe summary
       if: always()
@@ -57,4 +58,3 @@ jobs:
         echo "Probe execution completed at $(date)"
         echo "Market hours probe: Testing API during US stock market trading hours"
         echo "Check Kafka topics team05.reco_requests and team05.reco_responses for probe data"
-

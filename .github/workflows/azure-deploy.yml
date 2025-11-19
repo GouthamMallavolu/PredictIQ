@@ -1,0 +1,78 @@
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [ main, development ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      run: |
+        docker build -t finsightai:${{ github.sha }} .
+        echo "Docker image built successfully"
+    
+    - name: Azure Login
+      continue-on-error: true
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Login to Azure Container Registry
+      continue-on-error: true
+      run: |
+        az acr login --name finsightairegistry
+    
+    - name: Tag and push Docker image
+      continue-on-error: true
+      run: |
+        docker tag finsightai:${{ github.sha }} finsightairegistry.azurecr.io/finsightai-api:${{ github.sha }}
+        docker tag finsightai:${{ github.sha }} finsightairegistry.azurecr.io/finsightai-api:latest
+        docker push finsightairegistry.azurecr.io/finsightai-api:${{ github.sha }}
+        docker push finsightairegistry.azurecr.io/finsightai-api:latest
+    
+    - name: Check if Container App exists
+      continue-on-error: true
+      id: check_app
+      run: |
+        if az account show &>/dev/null && az containerapp show --name finsightai-api --resource-group finsightai-resourcegroup &>/dev/null 2>&1; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Deploy to Azure Container Apps (Update)
+      if: steps.check_app.outputs.exists == 'true'
+      continue-on-error: true
+      run: |
+        az containerapp update \
+          --name finsightai-api \
+          --resource-group finsightai-resourcegroup \
+          --image finsightairegistry.azurecr.io/finsightai-api:${{ github.sha }}
+    
+    - name: Create Container App (if doesn't exist)
+      if: steps.check_app.outputs.exists == 'false'
+      continue-on-error: true
+      run: |
+        echo "Container App 'finsightai-api' does not exist"
+        echo "To create it, run:"
+        echo "az containerapp create --name finsightai-api --resource-group finsightai-resourcegroup ..."
+        echo "Or create it manually in Azure Portal"
+    
+    - name: Deployment Status
+      if: always()
+      run: |
+        echo "Workflow completed"
+        echo "Note: If Azure deployment failed, ensure AZURE_CREDENTIALS secret is configured"
+        echo "See: https://github.com/${{ github.repository }}/settings/secrets/actions"
+

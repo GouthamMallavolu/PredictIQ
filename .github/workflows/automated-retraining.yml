@@ -1,6 +1,12 @@
 name: Automated Model Retraining
 
+# Automated retraining workflow - runs on schedule and manual trigger
 on:
+  push:
+    branches: [ main, development ]
+    paths:
+      - '.github/workflows/automated-retraining.yml'
+      - 'scripts/retrain_models.py'
   schedule:
     # Run twice daily at 2 AM and 2 PM UTC (adjust for your needs)
     - cron: '0 2 * * *'   # 2 AM UTC daily
@@ -18,12 +24,12 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history for git operations
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       
@@ -36,15 +42,18 @@ jobs:
         env:
           GIT_SHA: ${{ github.sha }}
           ENVIRONMENT: production
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          AZURE_STORAGE_CONTAINER: ${{ secrets.AZURE_STORAGE_CONTAINER }}
+          AZURE_STORAGE_BLOB_NAME: ${{ secrets.AZURE_STORAGE_BLOB_NAME }}
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
-            python scripts/retrain_models.py --version ${{ github.event.inputs.version }}
+            python scripts/retrain_models.py --version ${{ github.event.inputs.version }}                                                                       
           else
             python scripts/retrain_models.py --auto-version
           fi
       
       - name: Upload model artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: retrained-models-${{ github.run_id }}
           path: |

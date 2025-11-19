@@ -84,11 +84,18 @@ jobs:
         docker tag finsightai-api:${{ github.sha }} finsightai-api:latest
 
     - name: Push Docker image to ACR
+      env:
+        ACR_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
       run: |
-        docker tag finsightai-api:${{ github.sha }} ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:${{ github.sha }}
-        docker tag finsightai-api:${{ github.sha }} ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:latest
-        docker push ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:${{ github.sha }}
-        docker push ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:latest
+        if [ -n "$ACR_SERVER" ]; then
+          docker tag finsightai-api:${{ github.sha }} $ACR_SERVER/finsightai-api:${{ github.sha }}
+          docker tag finsightai-api:${{ github.sha }} $ACR_SERVER/finsightai-api:latest
+          docker push $ACR_SERVER/finsightai-api:${{ github.sha }}
+          docker push $ACR_SERVER/finsightai-api:latest
+        else
+          echo "ACR_LOGIN_SERVER secret not configured. Skipping push to ACR."
+          echo "Docker image built locally: finsightai-api:${{ github.sha }}"
+        fi
       continue-on-error: true
 
   deploy:

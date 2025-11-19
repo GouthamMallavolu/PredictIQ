@@ -22,15 +22,57 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.baseline_ma import MovingAveragePredictor
 
 def load_merged_data():
-    """Load the merged dataset"""
-    # Load the actual merged dataset
-    if os.path.exists("Merged_dataset.csv"):
-        print(f"📊 Loading data from: Merged_dataset.csv")
-        df = pd.read_csv("Merged_dataset.csv")
-        print(f"✅ Loaded {len(df)} records")
-        return df
-    else:
-        raise FileNotFoundError("Merged_dataset.csv not found! Please ensure the file exists.")
+    """Load the merged dataset from Azure Blob Storage or local fallback"""
+    import os
+    
+    # Try Azure Blob Storage first
+    blob_connection_string = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
+    blob_container = os.getenv('AZURE_STORAGE_CONTAINER', 'data')
+    blob_name = os.getenv('AZURE_STORAGE_BLOB_NAME', 'Merged_dataset.csv')
+    
+    if blob_connection_string:
+        try:
+            from azure.storage.blob import BlobServiceClient
+            print(f"📊 Downloading data from Azure Blob Storage: {blob_container}/{blob_name}")
+            
+            blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)
+            blob_client = blob_service_client.get_blob_client(container=blob_container, blob=blob_name)
+            
+            # Download blob to memory
+            download_stream = blob_client.download_blob()
+            df = pd.read_csv(download_stream)
+            
+            print(f"✅ Loaded {len(df)} records from Azure Blob Storage")
+            return df
+        except ImportError:
+            print("⚠️  azure-storage-blob not installed. Install with: pip install azure-storage-blob")
+            print("   Falling back to local file...")
+        except Exception as e:
+            print(f"⚠️  Failed to load from Azure Blob Storage: {e}")
+            print("   Falling back to local file...")
+    
+    # Fallback to local file
+    possible_paths = [
+        "Merged_dataset.csv",  # Root directory
+        "data/Merged_dataset.csv",  # data/ subdirectory
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "Merged_dataset.csv"),  # Project root
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "Merged_dataset.csv"),  # Project root/data
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            print(f"📊 Loading data from local file: {path}")
+            df = pd.read_csv(path)
+            print(f"✅ Loaded {len(df)} records")
+            return df
+    
+    # If not found anywhere, raise error
+    raise FileNotFoundError(
+        f"Merged_dataset.csv not found.\n" +
+        "Azure Blob Storage: Set AZURE_STORAGE_CONNECTION_STRING, AZURE_STORAGE_CONTAINER, AZURE_STORAGE_BLOB_NAME\n" +
+        "Local file: Checked these locations:\n" +
+        "\n".join(f"  - {p}" for p in possible_paths)
+    )
 
 
 def prepare_features(df):

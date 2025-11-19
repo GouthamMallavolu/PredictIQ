@@ -32,7 +32,7 @@ jobs:
     steps:
       - name: Workflow Started
         run: |
-          echo "🚀 Automated Retraining Workflow Started"
+          echo "Automated Retraining Workflow Started"
           echo "Trigger: ${{ github.event_name }}"
           echo "Branch: ${{ github.ref }}"
           echo "Commit: ${{ github.sha }}"

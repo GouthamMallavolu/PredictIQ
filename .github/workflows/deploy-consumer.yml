@@ -1,0 +1,98 @@
+name: Deploy Consumer to Azure
+
+on:
+  push:
+    branches: [ main, development ]
+    paths:
+      - '.github/workflows/deploy-consumer.yml'
+      - 'Dockerfile.consumer'
+      - 'scripts/run_consumer_service.py'
+      - 'kafka_pipeline/consumer.py'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  build-and-deploy-consumer:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Consumer Docker image
+      run: |
+        docker build -f Dockerfile.consumer -t finsightai-consumer:${{ github.sha }} .
+        echo "Consumer Docker image built successfully"
+
+    - name: Azure Login
+      continue-on-error: true
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Login to Azure Container Registry
+      continue-on-error: true
+      run: |
+        az acr login --name finsightairegistry
+
+    - name: Tag and push Consumer Docker image
+      continue-on-error: true
+      run: |
+        docker tag finsightai-consumer:${{ github.sha }} finsightairegistry.azurecr.io/finsightai-consumer:${{ github.sha }}
+        docker tag finsightai-consumer:${{ github.sha }} finsightairegistry.azurecr.io/finsightai-consumer:latest
+        docker push finsightairegistry.azurecr.io/finsightai-consumer:${{ github.sha }}
+        docker push finsightairegistry.azurecr.io/finsightai-consumer:latest
+
+    - name: Check if Consumer Container App exists
+      continue-on-error: true
+      id: check_consumer_app
+      run: |
+        if az account show &>/dev/null && az containerapp show --name finsightai-consumer --resource-group finsightai-resourcegroup &>/dev/null 2>&1; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Deploy Consumer to Azure Container Apps (Update)
+      if: steps.check_consumer_app.outputs.exists == 'true'
+      continue-on-error: true
+      run: |
+        az containerapp update \
+          --name finsightai-consumer \
+          --resource-group finsightai-resourcegroup \
+          --image finsightairegistry.azurecr.io/finsightai-consumer:${{ github.sha }}
+
+    - name: Create Consumer Container App (if doesn't exist)
+      if: steps.check_consumer_app.outputs.exists == 'false'
+      continue-on-error: true
+      run: |
+        echo "Container App 'finsightai-consumer' does not exist"
+        echo "Creating consumer container app..."
+        az containerapp create \
+          --name finsightai-consumer \
+          --resource-group finsightai-resourcegroup \
+          --image finsightairegistry.azurecr.io/finsightai-consumer:${{ github.sha }} \
+          --environment finsightai-environment \
+          --registry-server finsightairegistry.azurecr.io \
+          --registry-username ${{ secrets.ACR_USERNAME }} \
+          --registry-password ${{ secrets.ACR_PASSWORD }} \
+          --cpu 1.0 \
+          --memory 2.0Gi \
+          --min-replicas 1 \
+          --max-replicas 1 \
+          --env-vars \
+            KAFKA_BROKER=${{ secrets.KAFKA_BROKER }} \
+            KAFKA_USERNAME=${{ secrets.KAFKA_USERNAME }} \
+            KAFKA_PASSWORD=${{ secrets.KAFKA_PASSWORD }} \
+            STORAGE_CONNECTION=${{ secrets.STORAGE_CONNECTION }} \
+            STORAGE_CONTAINER=${{ secrets.STORAGE_CONTAINER }} \
+            CONSUMER_GROUP=finsight-consumer-group || \
+        echo "Failed to create container app. Please create manually using azure-deploy-consumer.sh script"
+
+    - name: Deployment Status
+      if: always()
+      run: |
+        echo "Consumer deployment workflow completed"
+        echo "Note: If Azure deployment failed, ensure AZURE_CREDENTIALS and other secrets are configured"
+

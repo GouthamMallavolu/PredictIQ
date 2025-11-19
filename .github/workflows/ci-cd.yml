@@ -98,6 +98,26 @@ jobs:
         fi
       continue-on-error: true
 
+    - name: Build Consumer Docker image
+      run: |
+        docker build -f Dockerfile.consumer -t finsightai-consumer:${{ github.sha }} .
+        docker tag finsightai-consumer:${{ github.sha }} finsightai-consumer:latest
+
+    - name: Push Consumer Docker image to ACR
+      env:
+        ACR_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      run: |
+        if [ -n "$ACR_SERVER" ]; then
+          docker tag finsightai-consumer:${{ github.sha }} $ACR_SERVER/finsightai-consumer:${{ github.sha }}
+          docker tag finsightai-consumer:${{ github.sha }} $ACR_SERVER/finsightai-consumer:latest
+          docker push $ACR_SERVER/finsightai-consumer:${{ github.sha }}
+          docker push $ACR_SERVER/finsightai-consumer:latest
+        else
+          echo "ACR_LOGIN_SERVER secret not configured. Skipping push to ACR."
+          echo "Docker image built locally: finsightai-consumer:${{ github.sha }}"
+        fi
+      continue-on-error: true
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -110,11 +130,25 @@ jobs:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
       continue-on-error: true
     
-    - name: Deploy to Azure Container Apps
+    - name: Deploy API to Azure Container Apps
       run: |
         az containerapp update \
           --name finsightai-api \
           --resource-group finsightai-resourcegroup \
           --image ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:${{ github.sha }}
+      continue-on-error: true
+
+    - name: Deploy Consumer to Azure Container Apps
+      run: |
+        # Check if consumer app exists, update if it does, create if it doesn't
+        if az containerapp show --name finsightai-consumer --resource-group finsightai-resourcegroup &>/dev/null 2>&1; then
+          az containerapp update \
+            --name finsightai-consumer \
+            --resource-group finsightai-resourcegroup \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-consumer:${{ github.sha }}
+        else
+          echo "Consumer container app does not exist. Skipping deployment."
+          echo "Run the deploy-consumer workflow or use azure-deploy-consumer.sh script to create it."
+        fi
       continue-on-error: true
 

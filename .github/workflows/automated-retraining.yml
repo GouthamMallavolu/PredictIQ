@@ -103,6 +103,13 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Create model-registry container if it doesn't exist
+        run: |
+          az storage container create \
+            --name model-registry \
+            --account-name finsightteam05storage \
+            --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
+
       - name: Upload model to Azure Blob Storage
         run: |
           VERSION=$(cat models/VERSION)

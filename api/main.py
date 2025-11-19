@@ -4,6 +4,8 @@ Provides /recommend endpoint for stock predictions
 """
 import os
 import logging
+import sys
+import time
 from datetime import datetime
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException

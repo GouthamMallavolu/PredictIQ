@@ -42,9 +42,12 @@ jobs:
         env:
           GIT_SHA: ${{ github.sha }}
           ENVIRONMENT: production
-          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
-          AZURE_STORAGE_CONTAINER: ${{ secrets.AZURE_STORAGE_CONTAINER }}
-          AZURE_STORAGE_BLOB_NAME: ${{ secrets.AZURE_STORAGE_BLOB_NAME }}
+          # Support both naming conventions for compatibility
+          STORAGE_CONNECTION: ${{ secrets.STORAGE_CONNECTION }}
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.STORAGE_CONNECTION }}
+          STORAGE_CONTAINER: ${{ secrets.STORAGE_CONTAINER }}
+          AZURE_STORAGE_CONTAINER: ${{ secrets.STORAGE_CONTAINER }}
+          AZURE_STORAGE_BLOB_NAME: ${{ secrets.AZURE_STORAGE_BLOB_NAME || 'Merged_dataset.csv' }}
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             python scripts/retrain_models.py --version ${{ github.event.inputs.version }}                                                                       

@@ -26,16 +26,18 @@ def load_merged_data():
     import os
     
     # Try Azure Blob Storage first
-    blob_connection_string = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
-    blob_container = os.getenv('AZURE_STORAGE_CONTAINER', 'data')
-    blob_name = os.getenv('AZURE_STORAGE_BLOB_NAME', 'Merged_dataset.csv')
+    blob_connection_string = (os.getenv('STORAGE_CONNECTION') or 
+                              os.getenv('AZURE_STORAGE_CONNECTION_STRING') or '').strip()
+    blob_container = (os.getenv('STORAGE_CONTAINER') or 
+                     os.getenv('AZURE_STORAGE_CONTAINER') or 'data').strip()
+    blob_name = (os.getenv('AZURE_STORAGE_BLOB_NAME') or 'Merged_dataset.csv').strip()
     
-    if blob_connection_string:
+    if blob_connection_string and blob_container and blob_name:
         try:
             from azure.storage.blob import BlobServiceClient
             print(f"📊 Downloading data from Azure Blob Storage: {blob_container}/{blob_name}")
-            
-            blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)
+
+            blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)                                                              
             blob_client = blob_service_client.get_blob_client(container=blob_container, blob=blob_name)
             
             # Download blob to memory
@@ -49,6 +51,8 @@ def load_merged_data():
             print("   Falling back to local file...")
         except Exception as e:
             print(f"⚠️  Failed to load from Azure Blob Storage: {e}")
+            if not blob_container or not blob_name:
+                print(f"   Missing required values: container='{blob_container}', blob_name='{blob_name}'")
             print("   Falling back to local file...")
     
     # Fallback to local file

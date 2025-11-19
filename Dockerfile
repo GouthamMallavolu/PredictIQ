@@ -41,15 +41,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy application code (changes more frequently, so copy after dependencies)
-COPY api/ ./api/
-COPY models/ ./models/
-COPY scripts/ ./scripts/
-COPY pipeline/ ./pipeline/
-COPY kafka_pipeline/config.py ./kafka_pipeline/
-COPY kafka_pipeline/schemas.py ./kafka_pipeline/
-COPY evaluation/ ./evaluation/
-COPY quality/ ./quality/
+# Copy application code
+COPY . /app
+
+# Copy models directory
+COPY models/ /app/models/
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Create directories for logs and cache
 RUN mkdir -p logs cache

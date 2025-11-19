@@ -11,11 +11,6 @@ from datetime import timedelta, date
 from threading import Lock
 import joblib
 from tensorflow.keras.models import load_model
-from azure.storage.blob import BlobServiceClient
-import io
-from typing import Optional
-from threading import RLock
-from typing import Dict, List, Optional
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -101,30 +96,25 @@ class PredictionService:
             cls._instance.load_models()
         return cls._instance
 
-    def load_models(self):
-        """Loads all models into memory, trying Azure first then local."""
-        logger.info(f"--- Loading models for version: {self.model_version} ---")
-        
-        # Try loading from Azure first
-        self.lstm_model = download_and_load_model_from_azure(self.model_version, 'lstm')
-        self.rf_model = download_and_load_model_from_azure(self.model_version, 'random_forest')
-        self.scaler = download_and_load_model_from_azure(self.model_version, 'scaler')
-        
-        # Fallback to local if Azure download failed
-        if self.lstm_model is None:
-            logger.warning("Falling back to local LSTM model...")
-            self.lstm_model = load_model_from_local('lstm')
-        if self.rf_model is None:
-            logger.warning("Falling back to local Random Forest model...")
-            self.rf_model = load_model_from_local('random_forest')
-        if self.scaler is None:
-            logger.warning("Falling back to local scaler...")
-            self.scaler = load_model_from_local('scaler')
+    def __init__(self):
+        self.models = {}
+        self.buffer = {}
+        self.load_models()
 
-        if self.lstm_model and self.rf_model and self.scaler:
-            logger.info(f"✅ All models for version '{self.model_version}' loaded successfully.")
-        else:
-            logger.error("❌ Critical error: Failed to load one or more models.")
+    def load_models(self):
+        """Loads all models from the local 'models/' directory."""
+        logger.info(f"--- Loading local models ---")
+        try:
+            model_dir = "models"
+            self.models["lstm"] = load_model(f"{model_dir}/multi_stock_model_LSTM.keras")
+            self.models["random_forest"] = joblib.load(f"{model_dir}/random_forest_model.pkl")
+            self.models["scaler"] = joblib.load(f"{model_dir}/scaler.pkl")
+            logger.info("✅ All models loaded successfully from local directory.")
+        except Exception as e:
+            logger.error(f"❌ Critical error: Failed to load one or more local models. Error: {e}")
+            # In a real scenario, you might want to handle this more gracefully
+            # For now, we'll proceed with potentially missing models, which will cause prediction failures.
+            self.models = {}
 
     def load_historical_data(self):
         """Load historical data from blob storage"""

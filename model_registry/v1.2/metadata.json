@@ -1,0 +1,15 @@
+{
+  "version": "v1.2",
+  "timestamp": "2025-11-18T18:20:24.513009",
+  "git_sha": "0dbf41c9d55d",
+  "environment": "development",
+  "models": {
+    "lstm": "multi_stock_model_LSTM.keras",
+    "random_forest": "random_forest_model.pkl",
+    "scaler": "scaler.pkl",
+    "moving_average": "baseline_ma.py"
+  },
+  "metrics": {
+    "note": "Metrics would be computed during actual training"
+  }
+}

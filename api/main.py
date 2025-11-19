@@ -11,8 +11,11 @@ from typing import List, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-
+import uuid
+from api.models import RecommendationRequest, RecommendationResponse
 from api.predictor import get_prediction_service
+from api.provenance import log_provenance
+from api.ab_testing import get_ab_variant, get_model_for_variant, log_ab_result
 
 # Import monitoring
 from api.monitoring import (
@@ -206,9 +209,12 @@ async def list_models():
     }
 
 
-@app.post("/recommend", response_model=RecommendResponse)
-async def recommend(request: RecommendRequest):
-    """Get stock price predictions for a list of symbols."""
+@app.post("/recommend", response_model=RecommendationResponse)
+async def recommend(request: RecommendationRequest):
+    """
+    Provides stock movement predictions based on the provided symbols.
+    """
+    request_id = f"req_{uuid.uuid4()}"
     start_time = time.time()
     
     # A/B Testing: Assign variant and model
@@ -219,9 +225,9 @@ async def recommend(request: RecommendRequest):
         model_to_use = get_model_for_variant(ab_variant)
         logger.info(f"A/B Test: user={request.user_id}, variant={ab_variant}, model={model_to_use}")
 
-    try:
-        logger.info(f"📊 Recommendation request: user={request.user_id}, symbols={request.symbols}, model={model_to_use}")
+    logger.info(f"📊 Recommendation request: user={request.user_id}, symbols={request.symbols}, model={model_to_use}")
 
+    try:
         predictor = get_prediction_service()
         
         # Validate symbols
@@ -237,15 +243,13 @@ async def recommend(request: RecommendRequest):
         # Use the model determined by the A/B test
         predictions = predictor.predict(symbols=request.symbols, model_name=model_to_use)
 
-        response = RecommendResponse(
-            request_id=request.user_id,
-            timestamp=datetime.now().isoformat(),
-            status="success",
-            results=predictions,
-            model_used=model_to_use
-        )
+        if not predictions:
+            raise HTTPException(status_code=500, detail="All predictions failed. Check logs for details.")
+
+        response_data = {"predictions": predictions}
+        latency_ms = (time.time() - start_time) * 1000
         
-        # Log A/B test result
+        # Log A/B result and provenance
         if ab_variant:
             log_ab_result(
                 user_id=request.user_id,
@@ -253,19 +257,28 @@ async def recommend(request: RecommendRequest):
                 model=model_to_use,
                 symbols=request.symbols,
                 predictions=predictions,
-                latency_ms=(time.time() - start_time) * 1000,
+                latency_ms=latency_ms,
                 success=True
             )
+        log_provenance(
+            request_id=request_id,
+            user_id=request.user_id,
+            input_symbols=request.symbols,
+            model=model_to_use,
+            predictions=predictions,
+            latency_ms=latency_ms,
+            status="success"
+        )
         
-        logger.info(f"✅ Successfully generated predictions for {len([r for r in predictions.values() if 'error' not in r])} symbols")
-        return response
+        return RecommendationResponse(**response_data)
         
     except HTTPException:
         raise
     except Exception as e:
+        latency_ms = (time.time() - start_time) * 1000
         logger.error(f"Error during recommendation: {e}", exc_info=True)
         
-        # Log A/B test result for failure
+        # Log A/B result and provenance for failure
         if ab_variant:
             log_ab_result(
                 user_id=request.user_id,
@@ -273,10 +286,20 @@ async def recommend(request: RecommendRequest):
                 model=model_to_use,
                 symbols=request.symbols,
                 predictions={},
-                latency_ms=(time.time() - start_time) * 1000,
+                latency_ms=latency_ms,
                 success=False,
                 error=str(e)
             )
+        log_provenance(
+            request_id=request_id,
+            user_id=request.user_id,
+            input_symbols=request.symbols,
+            model=model_to_use,
+            predictions={},
+            latency_ms=latency_ms,
+            status="error",
+            error=str(e)
+        )
             
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -141,7 +141,7 @@ jobs:
           --name finsightai-api \
           --resource-group finsightai-resourcegroup \
           --image ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:latest \
-          --set-env-vars MODEL_VERSION=${{ github.event.inputs.model_version || 'latest' }} \
+          --set-env-vars MODEL_VERSION=${{ github.event.inputs.model_version || 'latest' }} GIT_SHA=${{ github.sha }} IMAGE_TAG=${{ github.sha }} \
           --secrets "azure-storage-connection-string=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
       continue-on-error: true
 

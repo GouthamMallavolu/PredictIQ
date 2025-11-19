@@ -11,6 +11,12 @@ from datetime import timedelta, date
 from threading import Lock
 import joblib
 from tensorflow.keras.models import load_model
+from azure.storage.blob import BlobServiceClient
+import io
+from typing import Optional
+from threading import RLock
+from typing import Dict, List, Optional
+import json
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -98,23 +104,32 @@ class PredictionService:
 
     def __init__(self):
         self.models = {}
+        self.metadata = {}
         self.buffer = {}
         self.load_models()
 
     def load_models(self):
-        """Loads all models from the local 'models/' directory."""
+        """Loads all models and their metadata from the local 'models/' directory."""
         logger.info(f"--- Loading local models ---")
         try:
             model_dir = "models"
             self.models["lstm"] = load_model(f"{model_dir}/multi_stock_model_LSTM.keras")
             self.models["random_forest"] = joblib.load(f"{model_dir}/random_forest_model.pkl")
             self.models["scaler"] = joblib.load(f"{model_dir}/scaler.pkl")
-            logger.info("✅ All models loaded successfully from local directory.")
+
+            # Load the metadata file
+            with open(f"{model_dir}/metadata.json", "r") as f:
+                self.metadata = json.load(f)
+
+            logger.info("✅ All models and metadata loaded successfully from local directory.")
         except Exception as e:
-            logger.error(f"❌ Critical error: Failed to load one or more local models. Error: {e}")
-            # In a real scenario, you might want to handle this more gracefully
-            # For now, we'll proceed with potentially missing models, which will cause prediction failures.
+            logger.error(f"❌ Critical error: Failed to load one or more local models or metadata. Error: {e}")
             self.models = {}
+            self.metadata = {}
+
+    def get_metadata(self):
+        """Returns the loaded model metadata."""
+        return self.metadata
 
     def load_historical_data(self):
         """Load historical data from blob storage"""

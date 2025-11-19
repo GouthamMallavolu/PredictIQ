@@ -2,27 +2,42 @@ name: Automated Model Retraining
 
 # Automated retraining workflow - runs on schedule and manual trigger
 on:
-  push:
-    branches: [ main, development ]
-    paths:
-      - '.github/workflows/automated-retraining.yml'
-      - 'scripts/retrain_models.py'
-  schedule:
-    # Run twice daily at 2 AM and 2 PM UTC (adjust for your needs)
-    - cron: '0 2 * * *'   # 2 AM UTC daily
-    - cron: '0 14 * * *'  # 2 PM UTC daily
-  workflow_dispatch:  # Allow manual trigger
+  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
     inputs:
       version:
         description: 'Model version (e.g., v1.1) or leave empty for auto-increment'
         required: false
         default: ''
+  # Run on schedule (twice daily)
+  schedule:
+    # Run twice daily at 2 AM and 2 PM UTC (adjust for your needs)
+    - cron: '0 2 * * *'   # 2 AM UTC daily
+    - cron: '0 14 * * *'  # 2 PM UTC daily
+  # Also run on push to main/development (optional, for testing)
+  push:
+    branches: [ main, development ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'README*'
 
 jobs:
   retrain:
     runs-on: ubuntu-latest
     
+    # Ensure job runs even if previous steps fail
+    continue-on-error: false
+
     steps:
+      - name: Workflow Started
+        run: |
+          echo "🚀 Automated Retraining Workflow Started"
+          echo "Trigger: ${{ github.event_name }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          date
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:

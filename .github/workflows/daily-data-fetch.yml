@@ -1,0 +1,70 @@
+name: Daily Data Fetch
+
+# Daily workflow to fetch yesterday's stock data and upload to Azure Blob Storage
+on:
+  schedule:
+    # Run daily at 2 AM UTC (after US market close previous day)
+    # US market closes at 4 PM ET (9 PM UTC), so 2 AM UTC is ~5 hours after close
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual trigger
+  push:
+    branches: [ main, development ]
+    paths:
+      - '.github/workflows/daily-data-fetch.yml'
+      - 'scripts/daily_data_fetch.py'
+
+jobs:
+  fetch-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Create logs directory
+        run: |
+          mkdir -p logs
+      
+      - name: Fetch yesterday's data
+        env:
+          ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
+          STORAGE_CONNECTION: ${{ secrets.STORAGE_CONNECTION }}
+          STORAGE_CONTAINER: ${{ secrets.STORAGE_CONTAINER }}
+        run: |
+          python scripts/daily_data_fetch.py --hour-delay 60
+      
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-data-fetch-logs-${{ github.run_id }}
+          path: logs/daily_data_fetch.log
+          retention-days: 7
+          if-no-files-found: ignore
+      
+      - name: Create summary
+        if: always()
+        run: |
+          echo "## Daily Data Fetch Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run ID:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f logs/daily_data_fetch.log ]; then
+            echo "### Log Summary" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -50 logs/daily_data_fetch.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+

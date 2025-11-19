@@ -26,12 +26,18 @@ def load_merged_data():
     import os
     
     # Try Azure Blob Storage first
-    blob_connection_string = (os.getenv('STORAGE_CONNECTION') or 
+    blob_connection_string = (os.getenv('STORAGE_CONNECTION') or
                               os.getenv('AZURE_STORAGE_CONNECTION_STRING') or '').strip()
-    blob_container = (os.getenv('STORAGE_CONTAINER') or 
+    blob_container = (os.getenv('STORAGE_CONTAINER') or
                      os.getenv('AZURE_STORAGE_CONTAINER') or 'data').strip()
     blob_name = (os.getenv('AZURE_STORAGE_BLOB_NAME') or 'Merged_dataset.csv').strip()
-    
+
+    # Debug output
+    print(f"🔍 Azure Blob Storage configuration check:")
+    print(f"   Connection string: {'SET' if blob_connection_string else 'NOT SET'}")
+    print(f"   Container: {blob_container if blob_container else 'NOT SET'}")
+    print(f"   Blob name: {blob_name if blob_name else 'NOT SET'}")
+
     if blob_connection_string and blob_container and blob_name:
         try:
             from azure.storage.blob import BlobServiceClient
@@ -54,7 +60,10 @@ def load_merged_data():
             if not blob_container or not blob_name:
                 print(f"   Missing required values: container='{blob_container}', blob_name='{blob_name}'")
             print("   Falling back to local file...")
-    
+    else:
+        print("⚠️  Azure Blob Storage not configured (missing connection string, container, or blob name)")
+        print("   Falling back to local file...")
+
     # Fallback to local file
     possible_paths = [
         "Merged_dataset.csv",  # Root directory

@@ -275,11 +275,15 @@ def fetch_yesterday_data(simulate_realtime: bool = True, hour_delay_seconds: int
         logger.error("ALPHA_VANTAGE_KEY not found in environment variables")
         return
     
-    connect_str = os.getenv('STORAGE_CONNECTION')
-    container_name = os.getenv('STORAGE_CONTAINER', 'data')
-    
+    # Support both naming conventions for compatibility
+    connect_str = (os.getenv('STORAGE_CONNECTION') or 
+                   os.getenv('AZURE_STORAGE_CONNECTION_STRING') or '').strip()
+    container_name = (os.getenv('STORAGE_CONTAINER') or 
+                     os.getenv('AZURE_STORAGE_CONTAINER') or 'data').strip()
+
     if not connect_str:
-        logger.error("STORAGE_CONNECTION not found in environment variables")
+        logger.error("Azure Storage connection string not found in environment variables")
+        logger.error("Set either STORAGE_CONNECTION or AZURE_STORAGE_CONNECTION_STRING")
         return
     
     # Connect to blob storage

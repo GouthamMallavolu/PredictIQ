@@ -38,8 +38,8 @@ jobs:
       - name: Fetch yesterday's data
         env:
           ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
-          STORAGE_CONNECTION: ${{ secrets.STORAGE_CONNECTION }}
-          STORAGE_CONTAINER: ${{ secrets.STORAGE_CONTAINER }}
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          AZURE_STORAGE_CONTAINER: ${{ secrets.AZURE_STORAGE_CONTAINER }}
           KAFKA_BROKER: ${{ secrets.KAFKA_BROKER }}
           KAFKA_USERNAME: ${{ secrets.KAFKA_USERNAME }}
           KAFKA_PASSWORD: ${{ secrets.KAFKA_PASSWORD }}

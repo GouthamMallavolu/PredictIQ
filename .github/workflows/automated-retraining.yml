@@ -41,15 +41,15 @@ jobs:
       - name: Debug environment variables
         run: |
           echo "Checking Azure Blob Storage configuration..."
-          if [ -n "${{ secrets.STORAGE_CONNECTION }}" ]; then
-            echo "✓ STORAGE_CONNECTION is set (length: ${#STORAGE_CONNECTION})"
+          if [ -n "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" ]; then
+            echo "✓ AZURE_STORAGE_CONNECTION_STRING is set"
           else
-            echo "✗ STORAGE_CONNECTION is not set"
+            echo "✗ AZURE_STORAGE_CONNECTION_STRING is not set"
           fi
-          if [ -n "${{ secrets.STORAGE_CONTAINER }}" ]; then
-            echo "✓ STORAGE_CONTAINER is set: ${{ secrets.STORAGE_CONTAINER }}"
+          if [ -n "${{ secrets.AZURE_STORAGE_CONTAINER }}" ]; then
+            echo "✓ AZURE_STORAGE_CONTAINER is set: ${{ secrets.AZURE_STORAGE_CONTAINER }}"
           else
-            echo "✗ STORAGE_CONTAINER is not set"
+            echo "✗ AZURE_STORAGE_CONTAINER is not set"
           fi
           if [ -n "${{ secrets.AZURE_STORAGE_BLOB_NAME }}" ]; then
             echo "✓ AZURE_STORAGE_BLOB_NAME is set: ${{ secrets.AZURE_STORAGE_BLOB_NAME }}"
@@ -61,11 +61,9 @@ jobs:
         env:
           GIT_SHA: ${{ github.sha }}
           ENVIRONMENT: production
-          # Support both naming conventions for compatibility
-          STORAGE_CONNECTION: ${{ secrets.STORAGE_CONNECTION }}
-          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.STORAGE_CONNECTION }}    
-          STORAGE_CONTAINER: ${{ secrets.STORAGE_CONTAINER }}
-          AZURE_STORAGE_CONTAINER: ${{ secrets.STORAGE_CONTAINER }}
+          # Use consistent secret names
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          AZURE_STORAGE_CONTAINER: ${{ secrets.AZURE_STORAGE_CONTAINER }}
           AZURE_STORAGE_BLOB_NAME: ${{ secrets.AZURE_STORAGE_BLOB_NAME }}       
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then

@@ -85,8 +85,9 @@ jobs:
             KAFKA_BROKER=${{ secrets.KAFKA_BROKER }} \
             KAFKA_USERNAME=${{ secrets.KAFKA_USERNAME }} \
             KAFKA_PASSWORD=${{ secrets.KAFKA_PASSWORD }} \
-            STORAGE_CONNECTION=${{ secrets.STORAGE_CONNECTION }} \
-            STORAGE_CONTAINER=${{ secrets.STORAGE_CONTAINER }} \
+            AZURE_STORAGE_CONNECTION_STRING=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }} \
+            AZURE_STORAGE_CONTAINER=${{ secrets.AZURE_STORAGE_CONTAINER }} \
+            AZURE_STORAGE_CONTAINER_NAME=${{ secrets.AZURE_STORAGE_CONTAINER }} \
             CONSUMER_GROUP=finsight-consumer-group || \
         echo "Failed to create container app. Please create manually using azure-deploy-consumer.sh script"
 

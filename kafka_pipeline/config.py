@@ -18,8 +18,11 @@ SASL_PASSWORD = os.getenv('KAFKA_PASSWORD')
 CONSUMER_GROUP = os.getenv('CONSUMER_GROUP', 'finsight-consumer-group')
 
 # Azure Storage Configuration
-AZURE_STORAGE_CONNECTION_STRING = os.getenv('STORAGE_CONNECTION')
-AZURE_STORAGE_CONTAINER_NAME = os.getenv('AZURE_STORAGE_CONTAINER_NAME', 'snapshots')
+# Support both naming conventions for compatibility
+AZURE_STORAGE_CONNECTION_STRING = (os.getenv('STORAGE_CONNECTION') or 
+                                   os.getenv('AZURE_STORAGE_CONNECTION_STRING') or '')
+AZURE_STORAGE_CONTAINER_NAME = (os.getenv('AZURE_STORAGE_CONTAINER') or 
+                                os.getenv('AZURE_STORAGE_CONTAINER_NAME') or 'snapshots')
 
 # Alpha Vantage Configuration
 ALPHA_VANTAGE_KEY = os.getenv('ALPHA_VANTAGE_KEY')

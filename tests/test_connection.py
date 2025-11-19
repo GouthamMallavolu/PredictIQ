@@ -9,11 +9,11 @@ import logging
 from datetime import datetime
 
 # Add parent directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))    
 
 from kafka import KafkaProducer, KafkaConsumer
 from kafka.errors import KafkaError
-from config import *
+from kafka_pipeline.config import *
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

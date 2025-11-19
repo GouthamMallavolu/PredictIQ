@@ -1,0 +1,38 @@
+[run]
+source = api,pipeline
+omit =
+    */tests/*
+    */test_*.py
+    */__pycache__/*
+    */venv/*
+    */env/*
+    */\.venv/*
+    */\.env/*
+    */site-packages/*
+    */dist-packages/*
+    setup.py
+    conftest.py
+    api/ab_testing.py
+    api/monitoring.py
+    api/provenance.py
+    pipeline/eval/*
+    pipeline/serialize/*
+    pipeline/serve/*
+    pipeline/train/*
+    pipeline/transform/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+
+precision = 2
+
+[html]
+directory = htmlcov
+

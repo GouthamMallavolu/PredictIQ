@@ -23,25 +23,42 @@ def check_blob_structure():
         blob_service_client = BlobServiceClient.from_connection_string(connect_str)
         container_client = blob_service_client.get_container_client(container_name)
         
-        # List all blobs
-        blobs = container_client.list_blobs()
+        # List all blobs recursively
+        blobs = list(container_client.list_blobs())
         
         csv_files = []
+        parquet_files = []
         folders = set()
+        other_files = []
+        
+        print(f"\n📊 Total blobs found: {len(blobs)}")
+        print("="*60)
         
         for blob in blobs:
             name = blob.name
             if name.endswith('.csv'):
                 csv_files.append(name)
-                print(f"📄 CSV: {name}")
+                if len(csv_files) <= 10:  # Show first 10
+                    print(f"📄 CSV: {name}")
+            elif name.endswith('.parquet'):
+                parquet_files.append(name)
+                if len(parquet_files) <= 10:  # Show first 10
+                    print(f"📦 Parquet: {name}")
             elif '/' in name:
-                folder = name.split('/')[0]
-                folders.add(folder)
+                # Extract folder path
+                parts = name.split('/')
+                if len(parts) > 1:
+                    folder_path = '/'.join(parts[:-1])
+                    folders.add(folder_path)
+            else:
+                other_files.append(name)
         
         print("\n" + "="*60)
         print(f"📊 Summary:")
         print(f"   CSV files found: {len(csv_files)}")
+        print(f"   Parquet files found: {len(parquet_files)}")
         print(f"   Folders found: {len(folders)}")
+        print(f"   Other files: {len(other_files)}")
         
         if csv_files:
             print(f"\n✅ Found CSV files:")
@@ -49,6 +66,13 @@ def check_blob_structure():
                 print(f"   - {csv}")
             if len(csv_files) > 10:
                 print(f"   ... and {len(csv_files) - 10} more")
+        
+        if parquet_files:
+            print(f"\n✅ Found Parquet files:")
+            for parquet in parquet_files[:10]:  # Show first 10
+                print(f"   - {parquet}")
+            if len(parquet_files) > 10:
+                print(f"   ... and {len(parquet_files) - 10} more")
         
         # Check for Merged_dataset.csv specifically
         merged_csv = [f for f in csv_files if 'Merged_dataset' in f or 'merged' in f.lower()]
@@ -58,14 +82,24 @@ def check_blob_structure():
                 print(f"   - {f}")
         else:
             print(f"\n⚠️  No 'Merged_dataset.csv' found")
-            print(f"   Will need to merge individual CSV files")
+            if csv_files or parquet_files:
+                print(f"   Will need to merge individual files")
+            else:
+                print(f"   No data files found in container")
         
         if folders:
-            print(f"\n📁 Folders found:")
-            for folder in sorted(list(folders))[:10]:
+            print(f"\n📁 Folder structure:")
+            for folder in sorted(list(folders))[:15]:
                 print(f"   - {folder}/")
-            if len(folders) > 10:
-                print(f"   ... and {len(folders) - 10} more")
+            if len(folders) > 15:
+                print(f"   ... and {len(folders) - 15} more folders")
+        
+        if other_files:
+            print(f"\n📄 Other files:")
+            for f in other_files[:10]:
+                print(f"   - {f}")
+            if len(other_files) > 10:
+                print(f"   ... and {len(other_files) - 10} more")
                 
     except Exception as e:
         print(f"❌ Error: {e}")

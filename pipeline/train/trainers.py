@@ -50,7 +50,31 @@ def load_merged_data():
                 'Merged_dataset.csv',  # Root level
                 'v1/Merged_dataset.csv',  # In v1 folder
                 'data/Merged_dataset.csv',  # In data folder
+                'snapshots/Merged_dataset.csv',  # In snapshots folder
             ]
+            
+            # Also try searching in date-partitioned folders (v1/date=*/)
+            # This handles structures like v1/date=2022-03-01/data.csv
+            if 'v1' in blob_container or True:  # Try this for any container
+                try:
+                    # List blobs in v1 folder to find date partitions
+                    v1_blobs = list(container_client.list_blobs(name_starts_with='v1/'))
+                    date_folders = set()
+                    for blob in v1_blobs:
+                        if 'date=' in blob.name:
+                            # Extract date folder path
+                            parts = blob.name.split('/')
+                            for i, part in enumerate(parts):
+                                if part.startswith('date='):
+                                    date_folder = '/'.join(parts[:i+1])
+                                    date_folders.add(date_folder)
+                    
+                    # Add paths for Merged_dataset.csv in each date folder
+                    for date_folder in list(date_folders)[:5]:  # Limit to first 5 date folders
+                        possible_paths.append(f"{date_folder}/Merged_dataset.csv")
+                        possible_paths.append(f"{date_folder}/data.csv")
+                except:
+                    pass  # If this fails, continue with original paths
             
             df = None
             for path in possible_paths:
@@ -70,11 +94,23 @@ def load_merged_data():
             # If Merged_dataset.csv not found, try to merge all CSV files
             if df is None:
                 print("⚠️  Merged_dataset.csv not found. Searching for CSV files to merge...")
-                all_blobs = container_client.list_blobs(name_starts_with='')
+                
+                # List all blobs recursively (including subdirectories)
+                all_blobs = list(container_client.list_blobs(name_starts_with=''))
+                print(f"   Found {len(all_blobs)} total blobs in container")
+                
+                # Filter for CSV files
                 csv_files = [blob.name for blob in all_blobs if blob.name.endswith('.csv')]
+                
+                # Also check for parquet files (common in date-partitioned storage)
+                parquet_files = [blob.name for blob in all_blobs if blob.name.endswith('.parquet')]
                 
                 if csv_files:
                     print(f"📊 Found {len(csv_files)} CSV files. Merging...")
+                    # Show first few file names for debugging
+                    if len(csv_files) > 0:
+                        print(f"   Sample files: {csv_files[:5]}")
+                    
                     dfs = []
                     for csv_path in csv_files[:100]:  # Limit to first 100 files to avoid memory issues
                         try:
@@ -86,15 +122,52 @@ def load_merged_data():
                         except Exception as e:
                             print(f"   ⚠️  Skipped {csv_path}: {e}")
                             continue
-                    
+
                     if dfs:
                         df = pd.concat(dfs, ignore_index=True)
                         print(f"✅ Merged {len(df)} total records from {len(dfs)} CSV files")
                         return df
                     else:
                         print("❌ No CSV files could be loaded")
+                elif parquet_files:
+                    print(f"📊 Found {len(parquet_files)} Parquet files (CSV not found). Trying to load Parquet...")
+                    try:
+                        import pyarrow.parquet as pq
+                        from io import BytesIO
+                        
+                        dfs = []
+                        for parquet_path in parquet_files[:50]:  # Limit to 50 parquet files
+                            try:
+                                blob_client = blob_service_client.get_blob_client(container=blob_container, blob=parquet_path)
+                                download_stream = blob_client.download_blob()
+                                parquet_data = BytesIO(download_stream.readall())
+                                df_part = pq.read_table(parquet_data).to_pandas()
+                                dfs.append(df_part)
+                                print(f"   ✓ Loaded {len(df_part)} records from {parquet_path}")
+                            except Exception as e:
+                                print(f"   ⚠️  Skipped {parquet_path}: {e}")
+                                continue
+                        
+                        if dfs:
+                            df = pd.concat(dfs, ignore_index=True)
+                            print(f"✅ Merged {len(df)} total records from {len(dfs)} Parquet files")
+                            return df
+                    except ImportError:
+                        print("   ⚠️  pyarrow not installed. Install with: pip install pyarrow")
+                    except Exception as e:
+                        print(f"   ⚠️  Failed to load Parquet files: {e}")
+                    
+                    print("❌ Could not load Parquet files")
                 else:
-                    print("❌ No CSV files found in blob storage")
+                    print("❌ No CSV or Parquet files found in blob storage")
+                    # Debug: show what file types we found
+                    if all_blobs:
+                        file_extensions = {}
+                        for blob in all_blobs[:20]:  # Show first 20
+                            ext = blob.name.split('.')[-1] if '.' in blob.name else 'no_ext'
+                            file_extensions[ext] = file_extensions.get(ext, 0) + 1
+                        print(f"   Found file types: {file_extensions}")
+                        print(f"   Sample blob names: {[b.name for b in all_blobs[:5]]}")
             
             print("⚠️  Could not load data from Azure Blob Storage")
             print("   Falling back to local file...")

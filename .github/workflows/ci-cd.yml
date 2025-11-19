@@ -140,7 +140,9 @@ jobs:
         az containerapp update \
           --name finsightai-api \
           --resource-group finsightai-resourcegroup \
-          --image ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:${{ github.sha }}
+          --image ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:latest \
+          --set-env-vars MODEL_VERSION=${{ github.event.inputs.model_version || 'latest' }} \
+          --secrets "azure-storage-connection-string=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
       continue-on-error: true
 
     - name: Deploy Consumer to Azure Container Apps

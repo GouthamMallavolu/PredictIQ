@@ -6,10 +6,9 @@ import os
 import logging
 from datetime import datetime
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from prometheus_fastapi_instrumentator import Instrumentator
 
 from api.predictor import get_prediction_service
 
@@ -37,9 +36,6 @@ app = FastAPI(
     description="API for stock price predictions using ML models",
     version="1.0.0"
 )
-
-# Instrument the app with default metrics
-Instrumentator().instrument(app).expose(app)
 
 # Add Prometheus monitoring middleware
 app.add_middleware(PrometheusMiddleware)

@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="FinSightAI Stock Prediction API",
+    title="FinSightAI API",
     description="API for stock price predictions using ML models",
     version="1.0.0"
 )
@@ -206,31 +206,19 @@ async def list_models():
 
 @app.post("/recommend", response_model=RecommendResponse)
 async def recommend(request: RecommendRequest):
-    """
-    Get stock price predictions for given symbols
-    
-    Args:
-        request: RecommendRequest with user_id, symbols, and optional model
-    
-    Returns:
-        RecommendResponse with predictions
-    """
-        # Track request timing for provenance
-    import time
+    """Get stock price predictions for a list of symbols."""
     start_time = time.time()
     
-    # A/B Testing: Assign variant if no model specified and AB testing enabled
+    # A/B Testing: Assign variant and model
     ab_variant = None
-    original_model_request = request.model
-    
-    if AB_TEST_ENABLED and (request.model is None or request.model == "all"):
+    model_to_use = request.model
+    if AB_TEST_ENABLED and (model_to_use is None or model_to_use == "all"):
         ab_variant = get_ab_variant(request.user_id)
-        assigned_model = get_model_for_variant(ab_variant)
-        request.model = assigned_model
-        logger.info(f"A/B Test: User {request.user_id} assigned to variant {ab_variant} (model: {assigned_model})")
-    
+        model_to_use = get_model_for_variant(ab_variant)
+        logger.info(f"A/B Test: user={request.user_id}, variant={ab_variant}, model={model_to_use}")
+
     try:
-        logger.info(f"📊 Recommendation request: user={request.user_id}, symbols={request.symbols}, model={request.model}")
+        logger.info(f"📊 Recommendation request: user={request.user_id}, symbols={request.symbols}, model={model_to_use}")
 
         service = get_prediction_service()
         
@@ -244,108 +232,51 @@ async def recommend(request: RecommendRequest):
             )
         
         # Make predictions
-        results = {}
-        for symbol in request.symbols:
-            try:
-                symbol_upper = symbol.upper()
-                pred_result = service.predict(symbol_upper, request.model or "all")
-                results[symbol_upper] = pred_result
-            except ValueError as e:
-                results[symbol] = {"error": str(e)}
-            except Exception as e:
-                logger.error(f"Error predicting for {symbol}: {e}", exc_info=True)
-                results[symbol] = {"error": f"Prediction failed: {str(e)}"}
-        
-        # Check if any predictions succeeded
-        successful = any("error" not in result for result in results.values())
-        if not successful:
-            raise HTTPException(
-                status_code=500,
-                detail="All predictions failed. Check logs for details."
-            )
-        
+        # Use the model determined by the A/B test
+        predictions = service.predict(symbols=request.symbols, model_name=model_to_use)
+
         response = RecommendResponse(
             request_id=request.user_id,
             timestamp=datetime.now().isoformat(),
             status="success",
-            results=results,
-            model_used=request.model or "all"
+            results=predictions,
+            model_used=model_to_use
         )
         
-        # Record successful prediction
-        model_used = request.model or "all"
-        record_prediction(model_used, success=True)
-        
-        # Log provenance
-        latency_ms = (time.time() - start_time) * 1000
-        log_provenance(
-            request_id=request.user_id,
-            user_id=request.user_id,
-            input_symbols=request.symbols,
-            model=model_used,
-            predictions=results,
-            latency_ms=latency_ms,
-            status="success"
-        )
-        
-        # Log A/B test result if applicable
+        # Log A/B test result
         if ab_variant:
             log_ab_result(
                 user_id=request.user_id,
                 variant=ab_variant,
-                model=model_used,
+                model=model_to_use,
                 symbols=request.symbols,
-                predictions=results,
-                latency_ms=latency_ms,
+                predictions=predictions,
+                latency_ms=(time.time() - start_time) * 1000,
                 success=True
             )
         
-        logger.info(f"✅ Successfully generated predictions for {len([r for r in results.values() if 'error' not in r])} symbols")
+        logger.info(f"✅ Successfully generated predictions for {len([r for r in predictions.values() if 'error' not in r])} symbols")
         return response
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error in /recommend: {e}", exc_info=True)
+        logger.error(f"Error during recommendation: {e}", exc_info=True)
         
-        # Record failed prediction
-        model_used = request.model if request else "unknown"
-        record_prediction(model_used, success=False)
-        record_error(model_used, type(e).__name__)
-        
-        # Log provenance for error
-        try:
-            latency_ms = (time.time() - start_time) * 1000
-            log_provenance(
-                request_id=request.user_id if request else "unknown",
-                user_id=request.user_id if request else "unknown",
-                input_symbols=request.symbols if request else [],
-                model=model_used,
+        # Log A/B test result for failure
+        if ab_variant:
+            log_ab_result(
+                user_id=request.user_id,
+                variant=ab_variant,
+                model=model_to_use,
+                symbols=request.symbols,
                 predictions={},
-                latency_ms=latency_ms,
-                status="error",
+                latency_ms=(time.time() - start_time) * 1000,
+                success=False,
                 error=str(e)
             )
             
-            # Log A/B test result for error
-            if ab_variant:
-                log_ab_result(
-                    user_id=request.user_id if request else "unknown",
-                    variant=ab_variant,
-                    model=model_used,
-                    symbols=request.symbols if request else [],
-                    predictions={},
-                    latency_ms=latency_ms,
-                    success=False,
-                    error=str(e)
-                )
-        except:
-            pass  # Don't fail on logging
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

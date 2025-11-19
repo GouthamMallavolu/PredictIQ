@@ -73,7 +73,7 @@ jobs:
           --name finsightai-consumer \
           --resource-group finsightai-resourcegroup \
           --image finsightairegistry.azurecr.io/finsightai-consumer:${{ github.sha }} \
-          --environment finsightai-environment \
+          --environment finsightai-containerenv \
           --registry-server finsightairegistry.azurecr.io \
           --registry-username ${{ secrets.ACR_USERNAME }} \
           --registry-password ${{ secrets.ACR_PASSWORD }} \

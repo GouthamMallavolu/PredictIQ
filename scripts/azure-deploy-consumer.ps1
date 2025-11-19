@@ -5,7 +5,7 @@ param(
     [string]$ResourceGroup = "finsightai-resourcegroup",
     [string]$ContainerAppName = "finsightai-consumer",
     [string]$AcrName = "finsightairegistry",
-    [string]$EnvironmentName = "finsightai-environment",
+    [string]$EnvironmentName = "finsightai-containerenv",
     [string]$ImageName = "finsightai-consumer"
 )
 

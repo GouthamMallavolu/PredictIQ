@@ -18,7 +18,7 @@ The consumer service:
 3. **Azure resources**:
    - Resource Group: `finsightai-resourcegroup`
    - Container Registry: `finsightairegistry`
-   - Container Apps Environment: `finsightai-environment`
+   - Container Apps Environment: `finsightai-containerenv`
 4. **GitHub Secrets** configured (for automated deployment)
 
 ## Deployment Methods
@@ -86,7 +86,7 @@ az containerapp create \
   --name finsightai-consumer \
   --resource-group finsightai-resourcegroup \
   --image finsightairegistry.azurecr.io/finsightai-consumer:latest \
-  --environment finsightai-environment \
+  --environment finsightai-containerenv \
   --registry-server finsightairegistry.azurecr.io \
   --cpu 1.0 \
   --memory 2.0Gi \

@@ -8,7 +8,7 @@ set -e
 RESOURCE_GROUP="finsightai-resourcegroup"
 CONTAINER_APP_NAME="finsightai-consumer"
 ACR_NAME="finsightairegistry"
-ENVIRONMENT_NAME="finsightai-environment"
+ENVIRONMENT_NAME="finsightai-containerenv"
 IMAGE_NAME="finsightai-consumer"
 
 # Colors for output

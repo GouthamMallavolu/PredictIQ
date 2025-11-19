@@ -13,8 +13,6 @@ import joblib
 from tensorflow.keras.models import load_model
 from azure.storage.blob import BlobServiceClient
 import io
-from typing import Optional, Any
-from threading import RLock
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -84,17 +82,13 @@ def download_and_load_model_from_azure(model_version: str, file_key: str):
         return None
 
 # --- Predictor Class ---
-class PredictionService:
-    """
-    Prediction Service for FinSightAI API
-    Handles model loading and prediction logic
-    """
+class Predictor:
     _instance = None
 
     def __new__(cls):
         if cls._instance is None:
             print("Creating new Predictor instance")
-            cls._instance = super(PredictionService, cls).__new__(cls)
+            cls._instance = super(Predictor, cls).__new__(cls)
             cls._instance.model_version = os.getenv("MODEL_VERSION", "v1.0") # Default to v1.0
             print(f"Initializing Predictor for model version: {cls._instance.model_version}")
             cls._instance.lstm_model = None
@@ -281,18 +275,13 @@ class PredictionService:
         }
 
 
-# Global variable to hold the singleton instance
-_prediction_service: Optional["PredictionService"] = None
-_prediction_service_lock = RLock()
+# Global instance
+_prediction_service = None
 
-
-def get_prediction_service() -> "PredictionService":
-    """
-    Returns a singleton instance of the PredictionService.
-    """
+def get_prediction_service() -> PredictionService:
+    """Get or create prediction service instance"""
     global _prediction_service
-    with _prediction_service_lock:
-        if _prediction_service is None:
-            _prediction_service = PredictionService()
-        return _prediction_service
+    if _prediction_service is None:
+        _prediction_service = PredictionService()
+    return _prediction_service
 

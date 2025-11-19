@@ -2,6 +2,11 @@ name: Automated Model Retraining
 
 # Automated retraining workflow - runs on schedule and manual trigger
 on:
+  push:
+    branches: [ main, development ]
+    paths:
+      - '.github/workflows/automated-retraining.yml'
+      - 'scripts/retrain_models.py'
   schedule:
     # Run twice daily at 2 AM and 2 PM UTC (adjust for your needs)
     - cron: '0 2 * * *'   # 2 AM UTC daily

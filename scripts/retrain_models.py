@@ -67,30 +67,88 @@ def increment_version(version_str):
 
 def train_models():
     """
-    Train all models.
-    
-    Returns True if successful, False otherwise.
+    Train all models and collect metrics.
+
+    Returns (success: bool, metrics: dict)
     """
     print("\n[1/4] Training models...")
-    
+
     # Import training functions
     try:
-        from pipeline.train.trainers import train_lstm_model, train_random_forest_model, train_moving_average_model
+        from pipeline.train.trainers import (
+            load_merged_data,
+            prepare_features,
+            train_test_split_by_time,
+            prepare_lstm_data,
+            train_lstm_model,
+            train_random_forest_model,
+            train_moving_average_model
+        )
         print("  Imported training functions")
     except ImportError as e:
         print(f"  [ERROR] Could not import trainers: {e}")
         print("  [INFO] Models already exist, skipping training")
-        return True
-    
-    # For now, we'll use existing trained models
-    # In production, you would:
-    # 1. Fetch latest training data
-    # 2. Train each model
-    # 3. Evaluate performance
-    # 4. Save new models
-    
-    print("  [OK] Using existing models (training skipped for demo)")
-    return True
+        return True, {"note": "Training skipped - models already exist"}
+
+    try:
+        # Load and prepare data
+        print("  Loading training data...")
+        df = load_merged_data()
+        df = prepare_features(df)
+        train_df, test_df = train_test_split_by_time(df, train_ratio=0.8)
+        
+        # Train LSTM
+        print("  Training LSTM model...")
+        X_lstm, y_lstm = prepare_lstm_data(train_df)
+        lstm_model, lstm_scaler, lstm_metrics = train_lstm_model(X_lstm, y_lstm)
+        
+        # Train Random Forest
+        print("  Training Random Forest model...")
+        rf_model, rf_metrics = train_random_forest_model(train_df)
+        
+        # Train Moving Average
+        print("  Training Moving Average baseline...")
+        ma_model, ma_metrics = train_moving_average_model(train_df)
+        
+        # Collect all metrics
+        metrics = {
+            "lstm": {
+                "train_mae": round(lstm_metrics.get('train_mae', 0), 3),
+                "test_mae": round(lstm_metrics.get('test_mae', 0), 3),
+                "training_time_seconds": round(lstm_metrics.get('training_time', 0), 1)
+            },
+            "random_forest": {
+                "train_mae": round(rf_metrics.get('train_mae', 0), 3),
+                "test_mae": round(rf_metrics.get('test_mae', 0), 3),
+                "training_time_seconds": round(rf_metrics.get('training_time', 0), 1)
+            },
+            "moving_average": {
+                "sample_mae": round(ma_metrics.get('sample_mae', 0), 3),
+                "training_time_seconds": round(ma_metrics.get('training_time', 0), 1)
+            },
+            "data_info": {
+                "train_samples": len(train_df),
+                "test_samples": len(test_df),
+                "total_samples": len(df)
+            }
+        }
+        
+        print("  [OK] All models trained successfully")
+        print(f"  LSTM Test MAE: {metrics['lstm']['test_mae']}")
+        print(f"  RF Test MAE: {metrics['random_forest']['test_mae']}")
+        print(f"  MA Sample MAE: {metrics['moving_average']['sample_mae']}")
+        
+        return True, metrics
+        
+    except FileNotFoundError as e:
+        print(f"  [WARNING] Training data not found: {e}")
+        print("  [INFO] Using existing models")
+        return True, {"note": "Training skipped - data file not found"}
+    except Exception as e:
+        print(f"  [ERROR] Training failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False, {"error": str(e)}
 
 
 def save_model_version(version, metadata):
@@ -191,27 +249,25 @@ def main():
         version = get_latest_version()
         print(f"\nUsing current version: {version}")
     
-    # Create metadata
-    metadata = {
-        "version": version,
-        "timestamp": datetime.now().isoformat(),
-        "git_sha": get_git_sha(),
-        "environment": os.getenv('ENVIRONMENT', 'development'),
-        "models": {
-            "lstm": "multi_stock_model_LSTM.keras",
-            "random_forest": "random_forest_model.pkl",
-            "scaler": "scaler.pkl",
-            "moving_average": "baseline_ma.py"
-        },
-        "metrics": {
-            "note": "Metrics would be computed during actual training"
-        }
-    }
-    
     try:
-        # Step 1: Train models
-        success = train_models()
-        
+        # Step 1: Train models and get metrics
+        success, training_metrics = train_models()
+
+        # Create metadata with real metrics
+        metadata = {
+            "version": version,
+            "timestamp": datetime.now().isoformat(),
+            "git_sha": get_git_sha(),
+            "environment": os.getenv('ENVIRONMENT', 'development'),
+            "models": {
+                "lstm": "multi_stock_model_LSTM.keras",
+                "random_forest": "random_forest_model.pkl",
+                "scaler": "scaler.pkl",
+                "moving_average": "baseline_ma.py"
+            },
+            "metrics": training_metrics
+        }
+
         if success:
             # Step 2: Save version
             save_model_version(version, metadata)
@@ -246,7 +302,21 @@ def main():
         print(f"\n[ERROR] Retraining failed: {e}")
         import traceback
         traceback.print_exc()
-        create_retraining_log(version, metadata, False)
+        # Create metadata with error info
+        error_metadata = {
+            "version": version,
+            "timestamp": datetime.now().isoformat(),
+            "git_sha": get_git_sha(),
+            "environment": os.getenv('ENVIRONMENT', 'development'),
+            "models": {
+                "lstm": "multi_stock_model_LSTM.keras",
+                "random_forest": "random_forest_model.pkl",
+                "scaler": "scaler.pkl",
+                "moving_average": "baseline_ma.py"
+            },
+            "metrics": {"error": str(e)}
+        }
+        create_retraining_log(version, error_metadata, False)
         return 1
 
 

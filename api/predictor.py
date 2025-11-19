@@ -24,103 +24,105 @@ from models.baseline_ma import MovingAveragePredictor
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# --- Constants ---
+LOCAL_MODEL_DIR = "models"
+MODEL_FILES = {
+    "lstm": "multi_stock_model_LSTM.keras",
+    "random_forest": "random_forest_model.pkl",
+    "scaler": "scaler.pkl"
+}
 
-class PredictionService:
-    """Service for loading models and making predictions"""
-    
-    def __init__(self):
-        """Initialize models and load historical data"""
-        self.lstm_model = None
-        self.rf_model = None
-        self.scaler = None
-        self.ma_model = MovingAveragePredictor(window=20)
-        self.models_loaded = False
+# --- Model Loading Functions ---
+def load_model_from_local(file_key: str):
+    """Loads a model file from the local 'models' directory."""
+    model_path = os.path.join(LOCAL_MODEL_DIR, MODEL_FILES.get(file_key))
+    if os.path.exists(model_path):
+        logger.info(f"Loading {file_key} from local: {model_path}")
+        if file_key == 'lstm':
+            return load_model(model_path, compile=False) # Skip compilation for faster loading
+        return joblib.load(model_path)
+    return None
+
+def download_and_load_model_from_azure(model_version: str, file_key: str):
+    """Downloads a model file from Azure Blob Storage and loads it into memory."""
+    try:
+        connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+        if not connection_string:
+            logger.warning("AZURE_STORAGE_CONNECTION_STRING not set. Cannot download from Azure.")
+            return None
+
+        container_name = "model-registry"
+        file_name = MODEL_FILES.get(file_key)
+        blob_path = f"{model_version}/{file_name}"
+
+        logger.info(f"Downloading model '{blob_path}' from Azure Blob Storage...")
         
-        self.feature_cols = [
-            'open', 'high', 'low', 'close', 'volume', 'sentiment_mean', 
-            'news_count', 'return', 'log_return', 'ema_10', 'ema_50', 
-            'rsi', 'macd', 'bb_high', 'bb_low', 'atr'
-        ]
-        self.sequence_len = 60
+        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_path)
         
-        # Data buffers per symbol
-        self.data_buffer = {symbol: pd.DataFrame() for symbol in SYMBOLS}
-        self.buffer_lock = Lock()
+        if not blob_client.exists():
+            logger.error(f"Model blob not found in Azure: {blob_path}")
+            return None
+
+        downloader = blob_client.download_blob()
+        blob_bytes = downloader.readall()
         
-        # Azure Blob Client
-        self.blob_service_client = None
-        self.container_client = None
-        
-        try:
-            if AZURE_STORAGE_CONNECTION_STRING:
-                self.blob_service_client = BlobServiceClient.from_connection_string(
-                    AZURE_STORAGE_CONNECTION_STRING
-                )
-                self.container_client = self.blob_service_client.get_container_client(
-                    AZURE_STORAGE_CONTAINER_NAME
-                )
-                logger.info("✅ Blob storage client initialized")
-        except Exception as e:
-            logger.warning(f"⚠️  Could not initialize blob storage client: {e}")
-        
-        # Load models (catch errors to allow API to start)
-        try:
-            self.load_models()
-            self.models_loaded = True
-        except Exception as e:
-            logger.error(f"❌ Failed to load models during init: {e}", exc_info=True)
-            self.models_loaded = False
-        
-        # Load historical data in background (don't block startup)
-        try:
-            self.load_historical_data()
-        except Exception as e:
-            logger.warning(f"⚠️  Could not load historical data: {e}")
-    
+        with open(file_name, "wb") as f:
+            f.write(blob_bytes)
+
+        if file_key == 'lstm':
+            return load_model(file_name)
+        else:
+            return joblib.load(file_name)
+
+    except Exception as e:
+        logger.error(f"Failed to download/load model '{file_key}' from Azure: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+# --- Predictor Class ---
+class Predictor:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            print("Creating new Predictor instance")
+            cls._instance = super(Predictor, cls).__new__(cls)
+            cls._instance.model_version = os.getenv("MODEL_VERSION", "v1.0") # Default to v1.0
+            print(f"Initializing Predictor for model version: {cls._instance.model_version}")
+            cls._instance.lstm_model = None
+            cls._instance.rf_model = None
+            cls._instance.scaler = None
+            cls._instance.buffer = {}  # In-memory buffer for historical data
+            cls._instance.load_models()
+        return cls._instance
+
     def load_models(self):
-        """Load ML models and scaler"""
-        logger.info("📦 Loading ML models and scaler...")
+        """Loads all models into memory, trying Azure first then local."""
+        logger.info(f"--- Loading models for version: {self.model_version} ---")
         
-        # Model paths - check models/ subfolder, then current dir, then parent
-        def find_model_path(filename):
-            """Find model file in models/ subfolder, current dir, or parent dir"""
-            # Check models/ subfolder first
-            models_path = os.path.join('models', filename)
-            if os.path.exists(models_path):
-                return models_path
-            # Check current directory
-            if os.path.exists(filename):
-                return filename
-            # Check parent directory
-            model_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            parent_path = os.path.join(model_dir, filename)
-            if os.path.exists(parent_path):
-                return parent_path
-            # Check parent/models directory
-            parent_models_path = os.path.join(model_dir, 'models', filename)
-            if os.path.exists(parent_models_path):
-                return parent_models_path
-            # Return models/ path as default (will fail with clear error)
-            return models_path
+        # Try loading from Azure first
+        self.lstm_model = download_and_load_model_from_azure(self.model_version, 'lstm')
+        self.rf_model = download_and_load_model_from_azure(self.model_version, 'random_forest')
+        self.scaler = download_and_load_model_from_azure(self.model_version, 'scaler')
         
-        lstm_path = find_model_path('multi_stock_model_LSTM.keras')
-        rf_path = find_model_path('random_forest_model.pkl')
-        scaler_path = find_model_path('scaler.pkl')
-        
-        logger.info(f"  Loading LSTM from: {lstm_path}")
-        self.lstm_model = load_model(lstm_path, compile=False)  # Skip compilation for faster loading
-        logger.info("  ✓ LSTM loaded")
-        
-        logger.info(f"  Loading RandomForest from: {rf_path}")
-        self.rf_model = joblib.load(rf_path)
-        logger.info("  ✓ RandomForest loaded")
-        
-        logger.info(f"  Loading Scaler from: {scaler_path}")
-        self.scaler = joblib.load(scaler_path)
-        logger.info("  ✓ Scaler loaded")
-        
-        logger.info("✅ All models and scaler loaded successfully")
-    
+        # Fallback to local if Azure download failed
+        if self.lstm_model is None:
+            logger.warning("Falling back to local LSTM model...")
+            self.lstm_model = load_model_from_local('lstm')
+        if self.rf_model is None:
+            logger.warning("Falling back to local Random Forest model...")
+            self.rf_model = load_model_from_local('random_forest')
+        if self.scaler is None:
+            logger.warning("Falling back to local scaler...")
+            self.scaler = load_model_from_local('scaler')
+
+        if self.lstm_model and self.rf_model and self.scaler:
+            logger.info(f"✅ All models for version '{self.model_version}' loaded successfully.")
+        else:
+            logger.error("❌ Critical error: Failed to load one or more models.")
+
     def load_historical_data(self):
         """Load historical data from blob storage"""
         if not self.container_client:
@@ -166,8 +168,41 @@ class PredictionService:
                     logger.warning(f"⚠️  No historical data for {symbol}")
         except Exception as e:
             logger.error(f"Error loading historical data: {e}", exc_info=True)
-    
-    def predict(self, symbol: str, model: str = "all") -> dict:
+
+    def _ensure_buffer(self, symbol: str, required_length: int = 50):
+        """Ensures the buffer for a symbol has enough historical data."""
+        # For now, this is a placeholder. In a real system, this would
+        # fetch data from a database or a fast-access cache like Redis.
+        if symbol not in self.buffer or len(self.buffer.get(symbol, [])) < required_length:
+            logger.warning(f"Buffer for {symbol} has insufficient data ({len(self.buffer.get(symbol, []))}/{required_length}). Predictions may be inaccurate.")
+            # Create dummy data if buffer is empty to prevent crashes
+            if symbol not in self.buffer:
+                dummy_data = {
+                    'open': [150]*required_length, 'high': [151]*required_length,
+                    'low': [149]*required_length, 'close': [150.5]*required_length,
+                    'volume': [1000000]*required_length, 'sentiment_mean': [0.1]*required_length,
+                    'news_count': [5]*required_length, 'return': [0.001]*required_length,
+                    'log_return': [0.001]*required_length, 'ema_10': [150]*required_length,
+                    'ema_50': [149]*required_length, 'rsi': [55]*required_length,
+                    'macd': [0.5]*required_length, 'bb_high': [152]*required_length,
+                    'bb_low': [148]*required_length, 'atr': [1.5]*required_length
+                }
+                self.buffer[symbol] = pd.DataFrame(dummy_data)
+            self.buffer[symbol] = self.buffer[symbol].iloc[-required_length:]
+
+    def _update_buffer(self, new_data: dict):
+        """Updates the buffer with a new data point."""
+        symbol = new_data['symbol']
+        new_df = pd.DataFrame([new_data])
+        if symbol not in self.buffer:
+            self.buffer[symbol] = new_df
+        else:
+            self.buffer[symbol] = pd.concat([self.buffer[symbol], new_df], ignore_index=True)
+        
+        # Keep buffer size fixed
+        self.buffer[symbol] = self.buffer[symbol].iloc[-50:]
+
+    def predict(self, new_data: dict) -> float:
         """
         Make prediction for a symbol using specified model(s)
         
@@ -178,87 +213,66 @@ class PredictionService:
         Returns:
             Dictionary with predictions
         """
-        if symbol not in SYMBOLS:
-            raise ValueError(f"Invalid symbol: {symbol}. Valid symbols: {SYMBOLS}")
+        symbol = new_data['symbol']
         
-        with self.buffer_lock:
-            historical_buffer = self.data_buffer[symbol]
-            
-            if historical_buffer.empty:
-                raise ValueError(f"No historical data available for {symbol}")
-            
-            # Check if we have enough data
-            if len(historical_buffer) < self.sequence_len:
-                raise ValueError(
-                    f"Insufficient data for {symbol}. Need {self.sequence_len}, "
-                    f"have {len(historical_buffer)}"
-                )
-            
-            # Get the sequence for prediction
-            sequence_df = historical_buffer.tail(self.sequence_len).copy()
-            
-            # Ensure features are calculated
-            if not all(col in sequence_df.columns for col in self.feature_cols):
-                # Re-engineer features if missing
-                sequence_df = engineer_features(sequence_df)
-            
-            # Fill any NaNs
-            sequence_df = sequence_df.ffill().fillna(0)
-            
-            # Check for missing columns
-            missing_cols = [col for col in self.feature_cols if col not in sequence_df.columns]
-            if missing_cols:
-                raise ValueError(f"Missing feature columns: {missing_cols}")
-            
-            # Make predictions
-            predictions = {}
-            
-            if model.lower() in ['lstm', 'all']:
-                sequence_scaled = self.scaler.transform(
-                    sequence_df[self.feature_cols]
-                ).reshape((1, self.sequence_len, len(self.feature_cols)))
-                pred_lstm = self.lstm_model.predict(sequence_scaled, verbose=0)[0][0]
-                predictions['LSTM'] = float(pred_lstm)
-            
-            if model.lower() in ['randomforest', 'rf', 'all']:
-                pred_rf = self.rf_model.predict(
-                    sequence_df[self.feature_cols].tail(1)
-                )[0]
-                predictions['RandomForest'] = float(pred_rf)
-            
-            if model.lower() in ['movingaverage', 'ma', 'all']:
-                pred_ma = self.ma_model.predict(historical_buffer)
-                predictions['MovingAverage'] = float(pred_ma)
-            
-            latest_timestamp = sequence_df['timestamp'].iloc[-1]
-            target_timestamp = latest_timestamp + pd.Timedelta(hours=1)
-            
-            return {
-                'symbol': symbol,
-                'predictions': predictions,
-                'prediction_timestamp': latest_timestamp.isoformat(),
-                'target_timestamp': target_timestamp.isoformat(),
-                'current_price': float(sequence_df['close'].iloc[-1])
-            }
-    
-    def predict_multiple(self, symbols: list, model: str = "all") -> dict:
-        """
-        Make predictions for multiple symbols
+        self._update_buffer(new_data)
         
-        Args:
-            symbols: List of stock symbols
-            model: Model to use
+        if not all([self.lstm_model, self.rf_model, self.scaler]):
+            logger.error("Models not loaded, cannot predict.")
+            return 0.0
+
+        # Ensure buffer has enough data
+        self._ensure_buffer(symbol)
+
+        # Prepare features from buffer
+        sequence_df = self.buffer[symbol].tail(60).copy() # Use 60 as sequence length
         
-        Returns:
-            Dictionary mapping symbol -> prediction results
-        """
-        results = {}
-        for symbol in symbols:
-            try:
-                results[symbol] = self.predict(symbol, model)
-            except Exception as e:
-                results[symbol] = {'error': str(e)}
-        return results
+        # Ensure features are calculated
+        if not all(col in sequence_df.columns for col in self.feature_cols):
+            # Re-engineer features if missing
+            sequence_df = engineer_features(sequence_df)
+        
+        # Fill any NaNs
+        sequence_df = sequence_df.ffill().fillna(0)
+        
+        # Check for missing columns
+        missing_cols = [col for col in self.feature_cols if col not in sequence_df.columns]
+        if missing_cols:
+            raise ValueError(f"Missing feature columns: {missing_cols}")
+        
+        # Make predictions
+        predictions = {}
+        
+        # LSTM prediction
+        if self.lstm_model:
+            sequence_scaled = self.scaler.transform(
+                sequence_df[self.feature_cols]
+            ).reshape((1, 60, len(self.feature_cols)))
+            pred_lstm = self.lstm_model.predict(sequence_scaled, verbose=0)[0][0]
+            predictions['LSTM'] = float(pred_lstm)
+        
+        # Random Forest prediction
+        if self.rf_model:
+            pred_rf = self.rf_model.predict(
+                sequence_df[self.feature_cols].tail(1)
+            )[0]
+            predictions['RandomForest'] = float(pred_rf)
+        
+        # Moving Average prediction
+        if self.ma_model: # Assuming ma_model is an instance of MovingAveragePredictor
+            pred_ma = self.ma_model.predict(self.buffer[symbol])
+            predictions['MovingAverage'] = float(pred_ma)
+        
+        latest_timestamp = sequence_df['timestamp'].iloc[-1]
+        target_timestamp = latest_timestamp + pd.Timedelta(hours=1)
+        
+        return {
+            'symbol': symbol,
+            'predictions': predictions,
+            'prediction_timestamp': latest_timestamp.isoformat(),
+            'target_timestamp': target_timestamp.isoformat(),
+            'current_price': float(sequence_df['close'].iloc[-1])
+        }
 
 
 # Global instance

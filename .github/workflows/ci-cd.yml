@@ -1,11 +1,16 @@
-name: CI/CD Pipeline
+name: FinSightAI CI/CD
 
 on:
   push:
-    branches: [ main, development ]
+    branches: [ "main", "development" ]
   pull_request:
-    branches: [ main, development ]
+    branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      model_version:
+        description: 'The model version to deploy (e.g., v1.3). Leave empty to use default.'
+        required: false
+        default: 'v1.3' # Or a sensible default
 
 jobs:
   test:

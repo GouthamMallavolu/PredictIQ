@@ -87,7 +87,7 @@ jobs:
             python scripts/retrain_models.py --auto-version
           fi
       
-      - name: Upload model artifacts
+      - name: Upload model artifacts to GitHub
         uses: actions/upload-artifact@v4
         with:
           name: retrained-models-${{ github.run_id }}
@@ -97,7 +97,32 @@ jobs:
             models/metadata.json
             logs/retraining_history.jsonl
           retention-days: 30
+
+      - name: 'Login to Azure'
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Upload model to Azure Blob Storage
+        run: |
+          VERSION=$(cat models/VERSION)
+          az storage blob upload-batch \
+            --account-name finsightteam05storage \
+            --destination model-registry/$VERSION \
+            --source model_registry/$VERSION \
+            --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
+            --overwrite
       
+      - name: Trigger Deployment Workflow
+        if: success()
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: "FinSightAI CI/CD"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          inputs: '{ "model_version": "${{ env.MODEL_VERSION }}" }'
+        env:
+          MODEL_VERSION: $(cat models/VERSION)
+
       - name: Create retraining report
         if: always()
         run: |

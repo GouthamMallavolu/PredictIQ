@@ -41,15 +41,16 @@ jobs:
     
     - name: Run tests with coverage
       run: |
-        pytest tests/ --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing --cov-fail-under=70
+        pytest tests/ --cov=. --cov-report=xml --cov-report=html --cov-report=term-missing --cov-fail-under=70                                                  
       continue-on-error: true
-    
+
     - name: Upload coverage to artifacts
       uses: actions/upload-artifact@v4
       if: always()
       with:
         name: coverage-report
         path: htmlcov/
+        if-no-files-found: ignore
     
     - name: Coverage summary
       run: |
@@ -70,17 +71,27 @@ jobs:
       uses: docker/setup-buildx-action@v3
     
     - name: Log in to Azure Container Registry
+      if: ${{ secrets.ACR_LOGIN_SERVER != '' }}
       uses: azure/docker-login@v1
       with:
         login-server: ${{ secrets.ACR_LOGIN_SERVER }}
         username: ${{ secrets.ACR_USERNAME }}
         password: ${{ secrets.ACR_PASSWORD }}
       continue-on-error: true
-    
-    - name: Build and push Docker image
+
+    - name: Build Docker image
       run: |
-        docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:${{ github.sha }} .
+        docker build -t finsightai-api:${{ github.sha }} .
+        docker tag finsightai-api:${{ github.sha }} finsightai-api:latest
+      continue-on-error: true
+
+    - name: Push Docker image to ACR
+      if: ${{ secrets.ACR_LOGIN_SERVER != '' }}
+      run: |
+        docker tag finsightai-api:${{ github.sha }} ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:${{ github.sha }}
+        docker tag finsightai-api:${{ github.sha }} ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:latest
         docker push ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:${{ github.sha }}
+        docker push ${{ secrets.ACR_LOGIN_SERVER }}/finsightai-api:latest
       continue-on-error: true
 
   deploy:

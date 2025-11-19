@@ -40,6 +40,9 @@ jobs:
           ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
           STORAGE_CONNECTION: ${{ secrets.STORAGE_CONNECTION }}
           STORAGE_CONTAINER: ${{ secrets.STORAGE_CONTAINER }}
+          KAFKA_BROKER: ${{ secrets.KAFKA_BROKER }}
+          KAFKA_USERNAME: ${{ secrets.KAFKA_USERNAME }}
+          KAFKA_PASSWORD: ${{ secrets.KAFKA_PASSWORD }}
         run: |
           python scripts/daily_data_fetch.py --hour-delay 60
       

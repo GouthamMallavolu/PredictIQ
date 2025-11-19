@@ -220,7 +220,7 @@ async def recommend(request: RecommendRequest):
     try:
         logger.info(f"📊 Recommendation request: user={request.user_id}, symbols={request.symbols}, model={model_to_use}")
 
-        service = get_prediction_service()
+        predictor = get_prediction_service()
         
         # Validate symbols
         from kafka_pipeline.config import SYMBOLS
@@ -233,7 +233,7 @@ async def recommend(request: RecommendRequest):
         
         # Make predictions
         # Use the model determined by the A/B test
-        predictions = service.predict(symbols=request.symbols, model_name=model_to_use)
+        predictions = predictor.predict(symbols=request.symbols, model_name=model_to_use)
 
         response = RecommendResponse(
             request_id=request.user_id,

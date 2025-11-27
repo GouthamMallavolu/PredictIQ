@@ -58,5 +58,3 @@ jobs:
         echo "Probe execution completed at $(date)"
         echo "Market hours probe: Testing API during US stock market trading hours"
         echo "Check Kafka topics team05.reco_requests and team05.reco_responses for probe data"
-
-

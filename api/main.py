@@ -9,14 +9,17 @@ from typing import List, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Query
+
 
 from api.predictor import get_prediction_service
 
 # Import monitoring
 from api.monitoring import (
-    PrometheusMiddleware, 
-    metrics_endpoint, 
-    record_prediction, 
+    PrometheusMiddleware,
+    metrics_endpoint,
+    record_prediction,
     record_error,
     update_health_status,
     get_uptime_formatted
@@ -35,6 +38,14 @@ app = FastAPI(
     title="FinSightAI Stock Prediction API",
     description="API for stock price predictions using ML models",
     version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Add Prometheus monitoring middleware
@@ -70,17 +81,17 @@ class RecommendResponse(BaseModel):
     model_used: str
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize prediction service on startup"""
-    logger.info("🚀 Starting FinSightAI API...")
-    try:
-        service = get_prediction_service()
-        logger.info("✅ Prediction service initialized")
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize prediction service: {e}", exc_info=True)
-        # Don't raise - allow API to start even if models fail to load
-        # Health endpoint will report unhealthy status
+# @app.on_event("startup")
+# async def startup_event():
+#     """Initialize prediction service on startup"""
+#     logger.info("🚀 Starting FinSightAI API...")
+#     try:
+#         service = get_prediction_service()
+#         logger.info("✅ Prediction service initialized")
+#     except Exception as e:
+#         logger.error(f"❌ Failed to initialize prediction service: {e}", exc_info=True)
+#         # Don't raise - allow API to start even if models fail to load
+#         # Health endpoint will report unhealthy status
 
 
 @app.get("/")
@@ -102,14 +113,14 @@ async def health():
     """Health check endpoint"""
     try:
         service = get_prediction_service()
-        
+
         # Check if models are loaded
         models_ready = (
-            service.lstm_model is not None and 
-            service.rf_model is not None and 
+            service.lstm_model is not None and
+            service.rf_model is not None and
             service.scaler is not None
         )
-        
+
         if not models_ready:
             update_health_status(False)
             return JSONResponse(
@@ -121,7 +132,7 @@ async def health():
                     "uptime": get_uptime_formatted()
                 }
             )
-        
+
         update_health_status(True)
         return {
             "status": "healthy",
@@ -141,7 +152,7 @@ async def health():
         return JSONResponse(
             status_code=200,  # Don't fail health check on errors
             content={
-                "status": "error", 
+                "status": "error",
                 "error": str(e),
                 "timestamp": datetime.now().isoformat(),
                 "uptime": get_uptime_formatted()
@@ -153,7 +164,7 @@ async def health():
 async def metrics():
     """
     Prometheus metrics endpoint.
-    
+
     Exports metrics:
     - http_requests_total: Total HTTP requests by method, endpoint, status
     - http_request_duration_seconds: Request latency histogram
@@ -169,10 +180,10 @@ async def metrics():
 async def ab_test_metrics(date: Optional[str] = None):
     """
     Get A/B test metrics.
-    
+
     Args:
         date: Date string (YYYYMMDD) or None for today
-    
+
     Returns:
         A/B test metrics including success rates, latencies, and error rates for each variant
     """
@@ -208,32 +219,32 @@ async def list_models():
 async def recommend(request: RecommendRequest):
     """
     Get stock price predictions for given symbols
-    
+
     Args:
         request: RecommendRequest with user_id, symbols, and optional model
-    
+
     Returns:
         RecommendResponse with predictions
     """
         # Track request timing for provenance
     import time
     start_time = time.time()
-    
+
     # A/B Testing: Assign variant if no model specified and AB testing enabled
     ab_variant = None
     original_model_request = request.model
-    
+
     if AB_TEST_ENABLED and (request.model is None or request.model == "all"):
         ab_variant = get_ab_variant(request.user_id)
         assigned_model = get_model_for_variant(ab_variant)
         request.model = assigned_model
         logger.info(f"A/B Test: User {request.user_id} assigned to variant {ab_variant} (model: {assigned_model})")
-    
+
     try:
         logger.info(f"📊 Recommendation request: user={request.user_id}, symbols={request.symbols}, model={request.model}")
 
         service = get_prediction_service()
-        
+
         # Validate symbols
         from kafka_pipeline.config import SYMBOLS
         invalid_symbols = [s for s in request.symbols if s.upper() not in SYMBOLS]
@@ -242,7 +253,7 @@ async def recommend(request: RecommendRequest):
                 status_code=400,
                 detail=f"Invalid symbols: {invalid_symbols}. Valid symbols: {SYMBOLS}"
             )
-        
+
         # Make predictions
         results = {}
         for symbol in request.symbols:
@@ -255,15 +266,25 @@ async def recommend(request: RecommendRequest):
             except Exception as e:
                 logger.error(f"Error predicting for {symbol}: {e}", exc_info=True)
                 results[symbol] = {"error": f"Prediction failed: {str(e)}"}
-        
+
         # Check if any predictions succeeded
+        # successful = any("error" not in result for result in results.values())
+        # if not successful:
+        #     raise HTTPException(
+        #         status_code=500,
+        #         detail="All predictions failed. Check logs for details."
+        #     )
         successful = any("error" not in result for result in results.values())
         if not successful:
-            raise HTTPException(
-                status_code=500,
-                detail="All predictions failed. Check logs for details."
+            # Return a normal response with per-symbol errors
+            return RecommendResponse(
+                request_id=request.user_id,
+                timestamp=datetime.now().isoformat(),
+                status="error",
+                results=results,
+                model_used=request.model or "all"
             )
-        
+
         response = RecommendResponse(
             request_id=request.user_id,
             timestamp=datetime.now().isoformat(),
@@ -271,11 +292,11 @@ async def recommend(request: RecommendRequest):
             results=results,
             model_used=request.model or "all"
         )
-        
+
         # Record successful prediction
         model_used = request.model or "all"
         record_prediction(model_used, success=True)
-        
+
         # Log provenance
         latency_ms = (time.time() - start_time) * 1000
         log_provenance(
@@ -287,7 +308,7 @@ async def recommend(request: RecommendRequest):
             latency_ms=latency_ms,
             status="success"
         )
-        
+
         # Log A/B test result if applicable
         if ab_variant:
             log_ab_result(
@@ -299,20 +320,20 @@ async def recommend(request: RecommendRequest):
                 latency_ms=latency_ms,
                 success=True
             )
-        
+
         logger.info(f"✅ Successfully generated predictions for {len([r for r in results.values() if 'error' not in r])} symbols")
         return response
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"❌ Error in /recommend: {e}", exc_info=True)
-        
+
         # Record failed prediction
         model_used = request.model if request else "unknown"
         record_prediction(model_used, success=False)
         record_error(model_used, type(e).__name__)
-        
+
         # Log provenance for error
         try:
             latency_ms = (time.time() - start_time) * 1000
@@ -326,7 +347,7 @@ async def recommend(request: RecommendRequest):
                 status="error",
                 error=str(e)
             )
-            
+
             # Log A/B test result for error
             if ab_variant:
                 log_ab_result(
@@ -341,11 +362,42 @@ async def recommend(request: RecommendRequest):
                 )
         except:
             pass  # Don't fail on logging
-        
+
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
+
+
+@app.get("/historical/{symbol}")
+async def get_historical(
+    symbol: str,
+    limit: int = Query(120, ge=10, le=500)
+):
+    """
+    Return recent historical prices for a given symbol.
+    """
+    service = get_prediction_service()
+    symbol_upper = symbol.upper()
+
+    df = service.get_historical_data(symbol_upper, limit=limit)
+    if df is None or df.empty:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No historical data available for {symbol_upper}",
+        )
+
+    points = [
+        {
+            "timestamp": row["timestamp"].isoformat()
+            if not isinstance(row["timestamp"], str)
+            else row["timestamp"],
+            "close": float(row["close"]),
+        }
+        for _, row in df.iterrows()
+    ]
+
+    return {"symbol": symbol_upper, "points": points}
 
 
 if __name__ == "__main__":
